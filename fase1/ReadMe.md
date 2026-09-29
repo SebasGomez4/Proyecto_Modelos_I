@@ -4,9 +4,9 @@ Proyecto Integrador v1 · 2026 II · Modelos y Simulación de Sistemas I
 
 ## Integrantes
 
-- Persona 1 (@usuario-github-1)
-- Persona 2 (@usuario-github-2)
-- Persona 3 (@usuario-github-3)
+- Samuel Echeverri Ortiz (@Eche0813)
+- Miguel Angel Foronda (@Foronda713)
+- Sebastián Gómez Quintero (@SebasGomez4)
 
 ## Descripción del problema
 
