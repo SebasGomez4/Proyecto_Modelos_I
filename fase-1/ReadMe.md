@@ -4,9 +4,11 @@ Proyecto Integrador v1 · 2026 II · Modelos y Simulación de Sistemas I
 
 ## Integrantes
 
-- Samuel Echeverri Ortiz (@Eche0813) 
-- Miguel Angel Foronda (@Foronda713)
-- Sebastian Gómez Quintero (@SebasGomez4)
+Samuel Echeverri Ortiz (@Eche0813)
+
+Miguel Angel Foronda (@Foronda713)
+
+Sebastian Gómez Quintero (@SebasGomez4)
 
 ## Descripción del problema
 
@@ -22,6 +24,41 @@ Competencia de Kaggle [`aecincode_houseprices`](https://www.kaggle.com/competiti
 ## Objetivo del modelo
 
 Dada la ficha de una vivienda, predecir su precio de venta en dólares. En esta fase el énfasis está en un proceso reproducible, documentado y libre de fuga de información, que servirá de base para las siguientes fases (scripts, API REST y monitoreo).
+
+## Algoritmo
+
+`HistGradientBoostingRegressor` (Gradient Boosting) dentro de un `Pipeline` con el preprocesamiento anterior, envuelto en `TransformedTargetRegressor` (entrena con `log1p(precio)` y devuelve dólares). Modelo base: `DummyRegressor` que predice siempre la mediana.
+
+## Métrica
+
+**MAE** (error medio absoluto, en USD) como métrica principal por ser interpretable y poco dominada por las viviendas extremas; se reportan también RMSE, R² y RMSLE (la métrica de la competencia). Validación: 5 folds sobre entrenamiento; evaluación final única sobre el 20 % de prueba.
+
+## Principales resultados
+
+| | MAE (USD) | RMSE (USD) | R² | RMSLE |
+|---|---|---|---|---|
+| Baseline (mediana) – test | 53.977 | 80.588 | −0,047 | 0,419 |
+| **Gradient Boosting – test** | **15.177** | **22.886** | **0,916** | **0,139** |
+| Gradient Boosting – validación cruzada (train) | 15.594 ± 1.177 | 26.131 | 0,884 | 0,137 |
+
+El modelo reduce el MAE en ≈ 72 % respecto al baseline y el error de test es coherente con el de validación cruzada (sin señales de sobreajuste). El error absoluto es mayor en las viviendas más caras; el relativo, en las más baratas. Las variables más influyentes son la calidad general y el área habitable.
+
+## Cómo ejecutar el notebook
+
+1. Clonar el repositorio y entrar a `fase-1/`.
+2. Instalar dependencias: `pip install -r requirements.txt`.
+3. Abrir `notebook.ipynb` y ejecutar todas las celdas (*Run All*); o desde consola: `jupyter nbconvert --to notebook --execute notebook.ipynb`.
+
+Al ejecutarse se regeneran `modelo.joblib` y `metricas.json`. Uso del modelo guardado:
+
+```python
+import joblib, pandas as pd
+modelo = joblib.load("modelo.joblib")
+nuevos = pd.read_csv("data/test.csv")
+predicciones = modelo.predict(nuevos.drop(columns=["Order", "PID", "Id"]))   # USD
+```
+
+El archivo `modelo.joblib` se generó con scikit-learn 1.8.0; con otra versión puede no cargar, en cuyo caso basta re-ejecutar el notebook.
 
 ## Estructura de la carpeta
 
@@ -50,3 +87,7 @@ fase-1/
 **Separación.** 80 % entrenamiento / 20 % prueba, aleatoria simple, `random_state=42`. Cada fila es una vivienda distinta, sin grupos naturales.
 
 **Fuga de información.** El objetivo no se usa como predictora; la partición se hace antes de explorar y el test se evalúa una sola vez; imputación y codificación se ajustan solo con entrenamiento (dentro de un `Pipeline`, reajustado en cada fold de la validación cruzada); se verificó con `assert` y se midió el aporte de las variables de la venta (`Sale Type`, `Sale Condition`, `Mo Sold`, `Yr Sold`).
+
+## Limitaciones y trabajo futuro
+
+Datos de una sola ciudad y época (Ames, 2006–2010); un único split 80/20; hiperparámetros sin ajuste fino; valores atípicos sin tratar. Próximos pasos: búsqueda de hiperparámetros, análisis de atípicos, nuevas variables (edad, área total) y, si se usara para tasar antes de vender, retirar las variables de la venta.
