@@ -36,3 +36,17 @@ fase-1/
     ├── train.csv
     └── test.csv
 ```
+
+## Preparación de los datos y prevención de fuga de información
+
+**Valores faltantes.** 26 de las 79 predictoras tienen vacíos. En `train.csv`, `Mas Vnr Area` (0,68 %) es la variable dentro del rango 0,1 %–2 %; las de sótano (`Bsmt Qual`, `Bsmt Cond`, `BsmtFin Type 1/2`) están en 2,39 %. La mayoría de vacíos **no son datos perdidos sino "la vivienda no tiene esa característica"** (sótano, garaje, chimenea, piscina), lo que se verificó cruzando con variables numéricas de referencia. Tratamiento:
+
+- Categóricas con vacío "no aplica": categoría `"None"` (el vacío es información y se asocia a precios distintos).
+- Numéricas (`Lot Frontage`, `Mas Vnr Area`, `Garage Yr Blt`, ...): mediana + indicador de ausencia.
+- Categóricas ordenadas: entero ordenado; nominales: one-hot.
+- Objetivo entrenado sobre `log(1 + precio)`; sin escalamiento (modelo de árboles).
+- No se descartó ninguna variable predictora (solo los identificadores). Las variables muy correlacionadas (|r| > 0,8) se conservaron con justificación en el notebook. Los valores atípicos no se eliminan.
+
+**Separación.** 80 % entrenamiento / 20 % prueba, aleatoria simple, `random_state=42`. Cada fila es una vivienda distinta, sin grupos naturales.
+
+**Fuga de información.** El objetivo no se usa como predictora; la partición se hace antes de explorar y el test se evalúa una sola vez; imputación y codificación se ajustan solo con entrenamiento (dentro de un `Pipeline`, reajustado en cada fold de la validación cruzada); se verificó con `assert` y se midió el aporte de las variables de la venta (`Sale Type`, `Sale Condition`, `Mo Sold`, `Yr Sold`).
