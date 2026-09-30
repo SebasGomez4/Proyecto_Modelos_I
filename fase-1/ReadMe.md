@@ -5,7 +5,9 @@ Proyecto Integrador v1 · 2026 II · Modelos y Simulación de Sistemas I
 ## Integrantes
 
 Samuel Echeverri Ortiz (@Eche0813)
+
 Miguel Angel Foronda (@Foronda713)
+
 Sebastian Gómez Quintero (@SebasGomez4)
 
 ## Descripción del problema
