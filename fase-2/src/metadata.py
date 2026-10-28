@@ -39,8 +39,8 @@ def obtener_commit():
 
 
 def entorno():
-    return {"python": platform.python_version(), "pandas": pd._version_,
-            "numpy": np._version, "scikit-learn": sklearn.version_,
+    return {"python": platform.python_version(), "pandas": pd.__version__,
+            "numpy": np.__version__, "scikit-learn": sklearn.__version__,
             "dependencias": "requirements.txt"}
 
 
