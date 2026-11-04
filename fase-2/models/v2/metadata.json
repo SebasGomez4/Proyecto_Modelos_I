@@ -1,0 +1,364 @@
+{
+  "version": "v2",
+  "fecha_creacion": "2026-11-04T22:40:06+00:00",
+  "tipo_problema": "regresión",
+  "variable_objetivo": "SalePrice",
+  "algoritmo": "HistGradientBoostingRegressor sobre log1p(SalePrice)",
+  "parametros": {
+    "max_iter": 300,
+    "learning_rate": 0.05,
+    "cv_folds": 5,
+    "objetivo_transformado": "log1p"
+  },
+  "semilla": 42,
+  "esquema_entrada": [
+    {
+      "nombre": "MS SubClass",
+      "tipo": "numerica"
+    },
+    {
+      "nombre": "MS Zoning",
+      "tipo": "categorica"
+    },
+    {
+      "nombre": "Lot Frontage",
+      "tipo": "numerica"
+    },
+    {
+      "nombre": "Lot Area",
+      "tipo": "numerica"
+    },
+    {
+      "nombre": "Street",
+      "tipo": "categorica"
+    },
+    {
+      "nombre": "Alley",
+      "tipo": "categorica"
+    },
+    {
+      "nombre": "Lot Shape",
+      "tipo": "categorica"
+    },
+    {
+      "nombre": "Land Contour",
+      "tipo": "categorica"
+    },
+    {
+      "nombre": "Utilities",
+      "tipo": "categorica"
+    },
+    {
+      "nombre": "Lot Config",
+      "tipo": "categorica"
+    },
+    {
+      "nombre": "Land Slope",
+      "tipo": "categorica"
+    },
+    {
+      "nombre": "Neighborhood",
+      "tipo": "categorica"
+    },
+    {
+      "nombre": "Condition 1",
+      "tipo": "categorica"
+    },
+    {
+      "nombre": "Condition 2",
+      "tipo": "categorica"
+    },
+    {
+      "nombre": "Bldg Type",
+      "tipo": "categorica"
+    },
+    {
+      "nombre": "House Style",
+      "tipo": "categorica"
+    },
+    {
+      "nombre": "Overall Qual",
+      "tipo": "numerica"
+    },
+    {
+      "nombre": "Overall Cond",
+      "tipo": "numerica"
+    },
+    {
+      "nombre": "Year Built",
+      "tipo": "numerica"
+    },
+    {
+      "nombre": "Year Remod/Add",
+      "tipo": "numerica"
+    },
+    {
+      "nombre": "Roof Style",
+      "tipo": "categorica"
+    },
+    {
+      "nombre": "Roof Matl",
+      "tipo": "categorica"
+    },
+    {
+      "nombre": "Exterior 1st",
+      "tipo": "categorica"
+    },
+    {
+      "nombre": "Exterior 2nd",
+      "tipo": "categorica"
+    },
+    {
+      "nombre": "Mas Vnr Type",
+      "tipo": "categorica"
+    },
+    {
+      "nombre": "Mas Vnr Area",
+      "tipo": "numerica"
+    },
+    {
+      "nombre": "Exter Qual",
+      "tipo": "categorica"
+    },
+    {
+      "nombre": "Exter Cond",
+      "tipo": "categorica"
+    },
+    {
+      "nombre": "Foundation",
+      "tipo": "categorica"
+    },
+    {
+      "nombre": "Bsmt Qual",
+      "tipo": "categorica"
+    },
+    {
+      "nombre": "Bsmt Cond",
+      "tipo": "categorica"
+    },
+    {
+      "nombre": "Bsmt Exposure",
+      "tipo": "categorica"
+    },
+    {
+      "nombre": "BsmtFin Type 1",
+      "tipo": "categorica"
+    },
+    {
+      "nombre": "BsmtFin SF 1",
+      "tipo": "numerica"
+    },
+    {
+      "nombre": "BsmtFin Type 2",
+      "tipo": "categorica"
+    },
+    {
+      "nombre": "BsmtFin SF 2",
+      "tipo": "numerica"
+    },
+    {
+      "nombre": "Bsmt Unf SF",
+      "tipo": "numerica"
+    },
+    {
+      "nombre": "Total Bsmt SF",
+      "tipo": "numerica"
+    },
+    {
+      "nombre": "Heating",
+      "tipo": "categorica"
+    },
+    {
+      "nombre": "Heating QC",
+      "tipo": "categorica"
+    },
+    {
+      "nombre": "Central Air",
+      "tipo": "categorica"
+    },
+    {
+      "nombre": "Electrical",
+      "tipo": "categorica"
+    },
+    {
+      "nombre": "1st Flr SF",
+      "tipo": "numerica"
+    },
+    {
+      "nombre": "2nd Flr SF",
+      "tipo": "numerica"
+    },
+    {
+      "nombre": "Low Qual Fin SF",
+      "tipo": "numerica"
+    },
+    {
+      "nombre": "Gr Liv Area",
+      "tipo": "numerica"
+    },
+    {
+      "nombre": "Bsmt Full Bath",
+      "tipo": "numerica"
+    },
+    {
+      "nombre": "Bsmt Half Bath",
+      "tipo": "numerica"
+    },
+    {
+      "nombre": "Full Bath",
+      "tipo": "numerica"
+    },
+    {
+      "nombre": "Half Bath",
+      "tipo": "numerica"
+    },
+    {
+      "nombre": "Bedroom AbvGr",
+      "tipo": "numerica"
+    },
+    {
+      "nombre": "Kitchen AbvGr",
+      "tipo": "numerica"
+    },
+    {
+      "nombre": "Kitchen Qual",
+      "tipo": "categorica"
+    },
+    {
+      "nombre": "TotRms AbvGrd",
+      "tipo": "numerica"
+    },
+    {
+      "nombre": "Functional",
+      "tipo": "categorica"
+    },
+    {
+      "nombre": "Fireplaces",
+      "tipo": "numerica"
+    },
+    {
+      "nombre": "Fireplace Qu",
+      "tipo": "categorica"
+    },
+    {
+      "nombre": "Garage Type",
+      "tipo": "categorica"
+    },
+    {
+      "nombre": "Garage Yr Blt",
+      "tipo": "numerica"
+    },
+    {
+      "nombre": "Garage Finish",
+      "tipo": "categorica"
+    },
+    {
+      "nombre": "Garage Cars",
+      "tipo": "numerica"
+    },
+    {
+      "nombre": "Garage Area",
+      "tipo": "numerica"
+    },
+    {
+      "nombre": "Garage Qual",
+      "tipo": "categorica"
+    },
+    {
+      "nombre": "Garage Cond",
+      "tipo": "categorica"
+    },
+    {
+      "nombre": "Paved Drive",
+      "tipo": "categorica"
+    },
+    {
+      "nombre": "Wood Deck SF",
+      "tipo": "numerica"
+    },
+    {
+      "nombre": "Open Porch SF",
+      "tipo": "numerica"
+    },
+    {
+      "nombre": "Enclosed Porch",
+      "tipo": "numerica"
+    },
+    {
+      "nombre": "3Ssn Porch",
+      "tipo": "numerica"
+    },
+    {
+      "nombre": "Screen Porch",
+      "tipo": "numerica"
+    },
+    {
+      "nombre": "Pool Area",
+      "tipo": "numerica"
+    },
+    {
+      "nombre": "Pool QC",
+      "tipo": "categorica"
+    },
+    {
+      "nombre": "Fence",
+      "tipo": "categorica"
+    },
+    {
+      "nombre": "Misc Feature",
+      "tipo": "categorica"
+    },
+    {
+      "nombre": "Misc Val",
+      "tipo": "numerica"
+    },
+    {
+      "nombre": "Mo Sold",
+      "tipo": "numerica"
+    },
+    {
+      "nombre": "Yr Sold",
+      "tipo": "numerica"
+    },
+    {
+      "nombre": "Sale Type",
+      "tipo": "categorica"
+    },
+    {
+      "nombre": "Sale Condition",
+      "tipo": "categorica"
+    }
+  ],
+  "columnas_identificador": [
+    "Order",
+    "PID",
+    "Id"
+  ],
+  "datos": {
+    "fuente": "Kaggle aecincode_houseprices (basado en Ames Housing Dataset, De Cock 2011)",
+    "archivo": "train.csv",
+    "sha256": "3267d61d1eb5c6936a0de62f449e680e3f84782dc238ba906692796ed1ac3e40",
+    "n_observaciones": 1758,
+    "limitaciones": [
+      "Datos de una sola ciudad y época.",
+      "Incluye variables de la transacción (Sale Type, Sale Condition, Mo Sold, Yr Sold): solo son válidas si se conocen al momento de predecir; para una tasación previa a la venta habría que retirarlas.",
+      "Sin ajuste fino de hiperparámetros; valores atípicos no tratados."
+    ]
+  },
+  "separacion": {
+    "estrategia": "aleatoria simple (train_test_split)",
+    "test_size": 0.2,
+    "n_train": 1406,
+    "n_test": 352,
+    "alcance": "Estimación de precios de viviendas del mismo mercado (Ames, 2006-2010) y barrios conocidos, con partición aleatoria. No se evaluó en barrios nuevos ni en períodos futuros."
+  },
+  "metrica_principal": "MAE (USD)",
+  "entorno": {
+    "python": "3.11.9",
+    "pandas": "3.0.2",
+    "numpy": "2.4.4",
+    "scikit-learn": "1.8.0",
+    "dependencias": "requirements.txt"
+  },
+  "commit": "d025b6a8e58596ca0a9eb0610efc92cc5b7b9349+cambios-sin-commit"
+}
