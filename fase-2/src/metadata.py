@@ -14,10 +14,15 @@ import pandas as pd
 import sklearn
 
 
-def esquema_entrada(X):
-    """Lista ordenada de {'nombre', 'tipo'} con tipo 'numerica' o 'categorica'."""
+def esquema_entrada(X, categoricas=()):
+    """Lista ordenada de {'nombre', 'tipo'} con tipo 'numerica' o 'categorica'.
+
+    categoricas: columnas que son categóricas por naturaleza aunque en esta muestra lleguen
+    vacías (dtype numérico); evita que un dato de texto futuro se rechace como "no numérico".
+    """
     return [
-        {"nombre": c, "tipo": "numerica" if pd.api.types.is_numeric_dtype(X[c]) else "categorica"}
+        {"nombre": c,
+         "tipo": "numerica" if pd.api.types.is_numeric_dtype(X[c]) and c not in categoricas else "categorica"}
         for c in X.columns
     ]
 
