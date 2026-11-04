@@ -30,3 +30,7 @@ class EntradaInvalida(ErrorAplicacion):
 
 class ErrorDePrediccion(ErrorAplicacion):
     """El modelo no pudo generar predicciones válidas."""
+
+
+class DatosInvalidos(ErrorAplicacion):
+    """Los datos de entrenamiento o los parámetros de ejecución no son válidos."""
