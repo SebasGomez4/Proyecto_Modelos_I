@@ -59,3 +59,110 @@ repositorio/
     ├── evidencia/docker.md    # salida real de la ejecución en Docker
     └── outputs/               # resultados generados (no se versiona)
 ```
+
+
+## Entorno
+
+Se usó **Python 3.12** (el mismo de la imagen Docker). Desde la carpeta `fase-2`:
+
+Bash:
+
+```bash
+python3.12 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+PowerShell:
+
+```powershell
+py -3.12 -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+```
+
+Si PowerShell bloquea el script de activación: `Set-ExecutionPolicy -Scope Process Bypass`.
+
+## Datos
+
+- **Fuente:** competencia de Kaggle [`aecincode_houseprices`](https://www.kaggle.com/competitions/aecincode_houseprices), basada en el *Ames Housing Dataset* (De Cock, 2011).
+- **Archivos requeridos y ubicación:** `data/train.csv` (1.758 viviendas, 83 columnas: 79 predictoras, `SalePrice` y los identificadores `Order`, `PID`, `Id`) y `data/ejemplo_prediccion.csv`. Ambos ya están en el repositorio: no hace falta descargar nada ni usar credenciales de Kaggle.
+- **Ejemplo de predicción:** 5 filas de `test.csv` (sin `SalePrice`) con el esquema real.
+
+### Esquema del CSV de predicción
+
+Las **79 columnas predictoras** son obligatorias (el orden en el CSV no importa). `Order`, `PID` e `Id` son opcionales: si vienen, se copian a la salida para relacionar cada predicción con su fila. Una celda vacía es válida en cualquier columna; lo que no se admite es que falte la columna entera. Tipos: 36 numéricas y 43 categóricas (texto). `MS SubClass` es numérica pero codifica categorías. El esquema exacto queda en `models/<versión>/metadata.json` (`esquema_entrada`).
+
+<details>
+<summary>Lista de columnas</summary>
+
+**Numéricas (36):** MS SubClass, Lot Frontage, Lot Area, Overall Qual, Overall Cond, Year Built, Year Remod/Add, Mas Vnr Area, BsmtFin SF 1, BsmtFin SF 2, Bsmt Unf SF, Total Bsmt SF, 1st Flr SF, 2nd Flr SF, Low Qual Fin SF, Gr Liv Area, Bsmt Full Bath, Bsmt Half Bath, Full Bath, Half Bath, Bedroom AbvGr, Kitchen AbvGr, TotRms AbvGrd, Fireplaces, Garage Yr Blt, Garage Cars, Garage Area, Wood Deck SF, Open Porch SF, Enclosed Porch, 3Ssn Porch, Screen Porch, Pool Area, Misc Val, Mo Sold, Yr Sold.
+
+**Categóricas (43):** MS Zoning, Street, Alley, Lot Shape, Land Contour, Utilities, Lot Config, Land Slope, Neighborhood, Condition 1, Condition 2, Bldg Type, House Style, Roof Style, Roof Matl, Exterior 1st, Exterior 2nd, Mas Vnr Type, Exter Qual, Exter Cond, Foundation, Bsmt Qual, Bsmt Cond, Bsmt Exposure, BsmtFin Type 1, BsmtFin Type 2, Heating, Heating QC, Central Air, Electrical, Kitchen Qual, Functional, Fireplace Qu, Garage Type, Garage Finish, Garage Qual, Garage Cond, Paved Drive, Pool QC, Fence, Misc Feature, Sale Type, Sale Condition.
+
+</details>
+
+## Entrenamiento (`train.py`)
+
+Comando completo (en una sola línea, desde `fase-2`):
+
+```bash
+python train.py --data data/train.csv --target SalePrice --output-dir models --version v3 --seed 42
+```
+
+| Argumento | Valor por defecto | Descripción |
+|---|---|---|
+| `--data` | (obligatorio) | CSV con datos etiquetados |
+| `--target` | `SalePrice` | variable objetivo |
+| `--output-dir` | `models` | carpeta donde se guardan las versiones |
+| `--version` | (obligatorio) | identificador único de la versión (letras, números, `.`, `-`, `_`) |
+| `--seed` | `42` | semilla de la partición, la validación cruzada y el modelo |
+| `--test-size` | `0.2` | fracción de datos para prueba |
+| `--cv-folds` | `5` | folds de validación cruzada sobre entrenamiento (`0` la omite) |
+| `--max-iter` | `300` | iteraciones (árboles) de Gradient Boosting |
+| `--learning-rate` | `0.05` | tasa de aprendizaje |
+| `--id-columns` | `Order PID Id` | columnas identificadoras que se excluyen |
+
+Proceso: valida el identificador (falla antes de entrenar si ya existe) → lee y valida los datos → **separa train/test** → ajusta preprocesamiento y modelo solo con entrenamiento (en la validación cruzada se reajustan dentro de cada fold) → evalúa modelo y modelo base con la misma partición → guarda la versión.
+
+Las versiones entregadas se generaron así:
+
+```bash
+python train.py --data data/train.csv --target SalePrice --output-dir models --version v1 --seed 42
+python train.py --data data/train.csv --target SalePrice --output-dir models --version v2 --seed 42 --max-iter 500 --learning-rate 0.03
+```
+
+**Versionamiento.** Cada ejecución crea `models/<versión>/` con `modelo.joblib` (pipeline completo: preprocesamiento + modelo), `metrics.json` (modelo y modelo base) y `metadata.json` (identificador, fecha, algoritmo, parámetros, semilla, esquema de entrada, datos con su SHA-256, partición, métrica, versiones de Python y librerías, y el hash del commit). **Una versión existente nunca se sobrescribe**: un identificador repetido termina con error. Las carpetas `models/v3/` y `models/v-docker/` están en `.gitignore` porque son las que usan los comandos de ejemplo de este README; solo `v1` y `v2` se versionan en Git.
+
+## Predicción (`predict.py`)
+
+```bash
+python predict.py --model models/v1/modelo.joblib --input data/ejemplo_prediccion.csv --output outputs/predicciones.csv
+```
+
+`--model` acepta el archivo `modelo.joblib` o la carpeta de la versión (`models/v2`). Se elige la versión explícitamente en cada ejecución. La salida es un CSV con `fila` (posición en la entrada), los identificadores presentes (`Order`, `PID`, `Id`) y `prediccion` (USD). Genera una predicción por fila y conserva el orden.
+
+**Reglas documentadas:**
+
+- Faltan columnas obligatorias → error con la lista de columnas faltantes.
+- Columna numérica con texto no convertible → error que indica columna y fila del CSV.
+- Columnas adicionales → se ignoran, con un aviso por `stderr`.
+- Celdas vacías → válidas: las trata el preprocesamiento guardado con la versión.
+- Categorías no vistas en el entrenamiento → no fallan: se codifican con las reglas guardadas (one-hot en ceros; en las variables ordinales se tratan como desconocidas).
+- Ante cualquier error: mensaje comprensible, código de salida `1` y **no se crea el archivo de salida**.
+
+## Ayuda de los scripts
+
+```bash
+python train.py --help
+python predict.py --help
+```
+
+## Ubicación de los resultados
+
+| Qué | Dónde |
+|---|---|
+| Versiones del modelo | `models/<versión>/modelo.joblib` |
+| Métricas (modelo y modelo base) | `models/<versión>/metrics.json` |
+| Metadatos | `models/<versión>/metadata.json` |
+| Predicciones | `outputs/` (se crea al ejecutar; no se versiona) |
