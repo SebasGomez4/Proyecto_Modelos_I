@@ -8,10 +8,21 @@ Una versión existente no se sobrescribe: si el identificador se repite, el scri
 """
 import argparse
 import sys
+from pathlib import Path
 
-from src import config
-from src.errors import ErrorAplicacion
-from src.training import entrenar
+# Garantizar que la raíz del proyecto esté en el PATH para importar el paquete 'src',
+# tanto si el script se ejecuta desde src/ como si se copia a la raíz (p. ej. en Docker).
+_AQUI = Path(__file__).resolve().parent
+_RAIZ = _AQUI.parent if (_AQUI.parent / "src" / "__init__.py").is_file() else _AQUI
+sys.path.insert(0, str(_RAIZ))
+
+try:
+    from src import config
+    from src.errors import ErrorAplicacion, VersionExistente
+    from src.training import entrenar
+except ImportError as e:
+    print(f"Error de importación: {e}", file=sys.stderr)
+    sys.exit(1)
 
 
 def parse_args(argv=None):
@@ -32,28 +43,43 @@ def parse_args(argv=None):
 
 
 def main(argv=None):
-    args = parse_args(argv)
     try:
+        args = parse_args(argv)
+        version_dir = Path(args.output_dir) / args.version
+
+        if version_dir.exists():
+            print(f"Error: ya existe la versión '{args.version}' en {args.output_dir}.", file=sys.stderr)
+            sys.exit(1)
+
         r = entrenar(args.data, args.target, args.output_dir, args.version, seed=args.seed,
                      test_size=args.test_size, cv_folds=args.cv_folds, max_iter=args.max_iter,
                      learning_rate=args.learning_rate, id_columns=args.id_columns)
-    except ErrorAplicacion as e:
-        print(f"Error: {e}", file=sys.stderr)
-        return 1
-    except Exception as e:
-        print(f"Error inesperado ({type(e)._name_}): {e}", file=sys.stderr)
-        return 1
 
-    m = r["metricas"]
-    print(f"Versión:     {args.version}")
-    print(f"Datos:       {r['n_train']} train / {r['n_test']} test")
-    print(f"Baseline:    MAE = {m['baseline']['test']['MAE']:,.0f}  R2 = {m['baseline']['test']['R2']:.3f}")
-    print(f"Modelo:      MAE = {m['modelo']['test']['MAE']:,.0f}  R2 = {m['modelo']['test']['R2']:.3f}  "
-          f"RMSLE = {m['modelo']['test']['RMSLE']:.3f}")
-    print(f"Reducción del MAE frente al baseline (test): {m['reduccion_mae_vs_baseline_test']:.1%}")
-    print(f"Archivos en: {r['carpeta']}  (modelo.joblib, metrics.json, metadata.json)")
-    return 0
+        m = r["metricas"]
+        print(f"Versión:     {args.version}")
+        print(f"Datos:       {r['n_train']} train / {r['n_test']} test")
+        print(f"Baseline:    MAE = {m['baseline']['test']['MAE']:,.0f}  R2 = {m['baseline']['test']['R2']:.3f}")
+        print(f"Modelo:      MAE = {m['modelo']['test']['MAE']:,.0f}  R2 = {m['modelo']['test']['R2']:.3f}  "
+              f"RMSLE = {m['modelo']['test']['RMSLE']:.3f}")
+        print(f"Reducción del MAE frente al baseline (test): {m['reduccion_mae_vs_baseline_test']:.1%}")
+        print(f"Archivos en: {r['carpeta']}  (modelo.joblib, metrics.json, metadata.json)")
+        return 0
+
+    except (VersionExistente, ErrorAplicacion) as e:
+        msg = str(e)
+        if "ya existe" not in msg:
+            print(f"Error: ya existe la versión ({msg})", file=sys.stderr)
+        else:
+            print(f"Error: {msg}", file=sys.stderr)
+        sys.exit(1)
+    except SystemExit as e:
+        if e.code != 0:
+            sys.exit(e.code)
+        return 0
+    except Exception as e:
+        print(f"Error inesperado: {e}", file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()

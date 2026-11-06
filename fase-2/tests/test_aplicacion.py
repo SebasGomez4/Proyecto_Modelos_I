@@ -32,8 +32,8 @@ def sha256(ruta):
 
 
 def correr(script, *args):
-    """Ejecuta train.py / predict.py como lo haría un usuario y devuelve el proceso."""
-    return subprocess.run([sys.executable, str(RAIZ / script), *map(str, args)],
+    """Ejecuta src/train.py / src/predict.py como lo haría un usuario y devuelve el proceso."""
+    return subprocess.run([sys.executable, str(RAIZ / "src" / script), *map(str, args)],
                           capture_output=True, text=True, cwd=RAIZ)
 
 
@@ -182,3 +182,85 @@ def test_entrada_con_nulos_se_procesa_segun_la_estrategia_documentada(version_en
     assert Xp["Lot Frontage"].iloc[0:6].isna().all()          # los nulos llegan al modelo, no se descartan filas
     pred = inference.predecir(modelo, Xp)
     assert len(pred) == 12 and np.isfinite(pred).all()
+
+
+    
+
+# --------------------------------------------------------------------- 4. Entrada inválida
+def test_columna_obligatoria_ausente_da_error_claro(version_entrenada, muestra):
+    _, meta = registry.cargar_version(version_entrenada["carpeta"])
+    sin_columna = entradas(muestra, 3).drop(columns=["Lot Area"])
+    with pytest.raises(EntradaInvalida, match="Lot Area"):
+        inference.preparar_entrada(sin_columna, meta["esquema_entrada"])
+
+
+def test_cli_predict_con_columna_ausente_termina_con_error_y_sin_salida(version_entrenada, muestra, tmp_path):
+    entrada, salida = tmp_path / "in.csv", tmp_path / "out.csv"
+    entradas(muestra, 3).drop(columns=["Lot Area"]).to_csv(entrada, index=False)
+    r = correr("predict.py", "--model", version_entrenada["carpeta"] / "modelo.joblib",
+               "--input", entrada, "--output", salida)
+    assert r.returncode != 0
+    assert "Lot Area" in r.stderr and "Traceback" not in r.stderr
+    assert not salida.exists()                                # no aparenta resultados válidos
+
+
+def test_tipo_incompatible_indica_columna_y_fila(version_entrenada, muestra):
+    _, meta = registry.cargar_version(version_entrenada["carpeta"])
+    X = entradas(muestra, 4)
+    X["Lot Area"] = X["Lot Area"].astype(object)
+    X.loc[2, "Lot Area"] = "grande"
+    with pytest.raises(EntradaInvalida, match=r"Lot Area.*fila 4"):
+        inference.preparar_entrada(X, meta["esquema_entrada"])
+
+
+def test_cli_predict_con_modelo_inexistente_falla_sin_crear_salida(tmp_path, muestra):
+    entrada, salida = tmp_path / "in.csv", tmp_path / "out.csv"
+    entradas(muestra, 3).to_csv(entrada, index=False)
+    r = correr("predict.py", "--model", tmp_path / "nada" / "modelo.joblib", "--input", entrada, "--output", salida)
+    assert r.returncode != 0 and "No existe el modelo" in r.stderr and not salida.exists()
+
+
+def test_entrenar_con_objetivo_inexistente_da_error_claro(csv_muestra, tmp_path):
+    with pytest.raises(DatosInvalidos, match="Precio"):
+        entrenar(csv_muestra, "Precio", tmp_path, "vx", **PARAMS_RAPIDOS)
+    assert not (tmp_path / "vx").exists()                     # no queda una versión a medias
+
+
+# --------------------------------------------------------------------- 5. Versionamiento
+def test_segunda_version_conserva_la_primera_y_ambas_se_cargan(csv_muestra, tmp_path):
+    entrenar(csv_muestra, TARGET, tmp_path, "va", **PARAMS_RAPIDOS)
+    hash_va = sha256(tmp_path / "va" / "modelo.joblib")
+    meta_va = (tmp_path / "va" / "metadata.json").read_bytes()
+
+    entrenar(csv_muestra, TARGET, tmp_path, "vb", seed=1, cv_folds=0, max_iter=20)
+
+    assert registry.listar_versiones(tmp_path) == ["va", "vb"]
+    assert sha256(tmp_path / "va" / "modelo.joblib") == hash_va            # la primera no cambió
+    assert (tmp_path / "va" / "metadata.json").read_bytes() == meta_va
+    for v in ("va", "vb"):
+        modelo, meta = registry.cargar_version(tmp_path / v)
+        assert meta["version"] == v and hasattr(modelo, "predict")
+
+
+def test_identificador_repetido_no_sobrescribe(csv_muestra, tmp_path):
+    entrenar(csv_muestra, TARGET, tmp_path, "va", **PARAMS_RAPIDOS)
+    antes = {p.name: sha256(p) for p in (tmp_path / "va").iterdir()}
+
+    with pytest.raises(VersionExistente, match="ya existe"):
+        entrenar(csv_muestra, TARGET, tmp_path, "va", seed=99, cv_folds=0, max_iter=10)
+    with pytest.raises(VersionExistente):
+        registry.guardar_version(tmp_path, "va", object(), {}, {})
+
+    assert {p.name: sha256(p) for p in (tmp_path / "va").iterdir()} == antes
+
+
+def test_cli_train_con_version_repetida_termina_con_error(version_entrenada, csv_muestra):
+    r = correr("train.py", "--data", csv_muestra, "--target", TARGET,
+               "--output-dir", version_entrenada["salida"], "--version", "t1", "--cv-folds", 0)
+    assert r.returncode != 0 and "ya existe" in r.stderr
+
+
+def test_version_con_caracteres_peligrosos_se_rechaza(csv_muestra, tmp_path):
+    with pytest.raises(Exception, match="inválido"):
+        entrenar(csv_muestra, TARGET, tmp_path, "../fuera", **PARAMS_RAPIDOS)
+    assert not (tmp_path.parent / "fuera").exists()
