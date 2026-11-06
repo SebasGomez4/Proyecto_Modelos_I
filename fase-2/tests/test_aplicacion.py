@@ -104,3 +104,81 @@ def test_la_imputacion_se_ajusta_solo_con_entrenamiento(version_entrenada, csv_m
     aprendida = imputador.statistics_[num_cols.index("Lot Frontage")]
     assert aprendida == pytest.approx(X_train["Lot Frontage"].median())
     assert not set(X_train.index) & set(X_test.index)
+
+    
+
+# ------------------------------------------------------------- 2. Carga y predicción
+def test_modelo_guardado_conserva_las_predicciones_del_original(muestra, tmp_path):
+    X = muestra.drop(columns=[TARGET] + ID_COLUMNS_DEFECTO)
+    original = construir_modelo(X, semilla=3, max_iter=20).fit(X, muestra[TARGET])
+    antes = original.predict(X)
+
+    registry.guardar_version(tmp_path, "vt", original, {"MAE": 0}, {"version": "vt"})
+    cargado, _ = registry.cargar_version(tmp_path / "vt" / "modelo.joblib")
+    despues = cargado.predict(X)
+
+    assert len(despues) == len(X)
+    np.testing.assert_allclose(despues, antes, rtol=1e-9)
+
+
+def test_predict_da_una_prediccion_por_fila_en_el_orden_original(version_entrenada, muestra, tmp_path):
+    X = entradas(muestra, 25)
+    X = X[list(reversed(X.columns))]                          # el orden de columnas del CSV no importa
+    entrada, salida = tmp_path / "in.csv", tmp_path / "out.csv"
+    X.to_csv(entrada, index=False)
+
+    assert predict_cli.main(["--model", str(version_entrenada["carpeta"] / "modelo.joblib"),
+                             "--input", str(entrada), "--output", str(salida)]) == 0
+    res = pd.read_csv(salida)
+    assert len(res) == 25 and list(res["fila"]) == list(range(1, 26))
+    assert res["Id"].tolist() == X["Id"].tolist()             # misma correspondencia con la entrada
+
+    modelo, meta = registry.cargar_version(version_entrenada["carpeta"])
+    esperado = modelo.predict(X[[c["nombre"] for c in meta["esquema_entrada"]]])
+    np.testing.assert_allclose(res["prediccion"], esperado, atol=0.01)
+
+
+def test_categoria_nueva_y_columna_adicional_no_rompen_ni_cambian_la_prediccion(version_entrenada, muestra):
+    modelo, meta = registry.cargar_version(version_entrenada["carpeta"])
+    base = entradas(muestra, 10)
+    raro = base.copy()
+    raro["Neighborhood"] = "BarrioInexistente"                # categoría no vista en entrenamiento
+    raro["columna_extra"] = 123                               # columna que el modelo no usa
+
+    X, extra = inference.preparar_entrada(raro, meta["esquema_entrada"])
+    assert "columna_extra" in extra and "columna_extra" not in X.columns
+    pred = inference.predecir(modelo, X)
+    assert len(pred) == 10 and np.isfinite(pred).all()
+
+    X_base, _ = inference.preparar_entrada(base, meta["esquema_entrada"])
+    X_sin_extra, _ = inference.preparar_entrada(base.assign(columna_extra=1), meta["esquema_entrada"])
+    np.testing.assert_allclose(inference.predecir(modelo, X_sin_extra), inference.predecir(modelo, X_base))
+
+
+# ----------------------------------------------------------------- 3. Valores faltantes
+def test_ausencia_estructural_se_distingue_de_dato_desconocido():
+    X = pd.DataFrame({
+        "Bsmt Qual":     [np.nan, np.nan, np.nan, "TA"],
+        "Total Bsmt SF": [0.0,    800.0,  np.nan, 900.0],
+        "Alley":         [np.nan, "Pave", np.nan, np.nan],
+    })
+    t = AusenciaEstructural().fit(X).transform(X)
+    assert t["Bsmt Qual"].tolist() == ["None",         # sin sótano: ausencia real
+                                       "Desconocido",  # hay sótano pero falta el dato
+                                       "Desconocido",  # la referencia tampoco existe
+                                       "TA"]
+    assert t["Alley"].tolist() == ["None", "Pave", "None", "None"]   # sin referencia: "None"
+
+
+def test_entrada_con_nulos_se_procesa_segun_la_estrategia_documentada(version_entrenada, muestra):
+    modelo, meta = registry.cargar_version(version_entrenada["carpeta"])
+    X = entradas(muestra, 12)
+    X.loc[0:5, "Lot Frontage"] = np.nan                       # numérica: mediana + indicador
+    X.loc[3:8, "Mas Vnr Area"] = np.nan
+    X.loc[6:11, "Bsmt Qual"] = np.nan                         # categórica: None / Desconocido
+    X.loc[9:11, "Total Bsmt SF"] = np.nan                     # referencia nula: no es columna ausente
+
+    Xp, _ = inference.preparar_entrada(X, meta["esquema_entrada"])
+    assert Xp["Lot Frontage"].iloc[0:6].isna().all()          # los nulos llegan al modelo, no se descartan filas
+    pred = inference.predecir(modelo, Xp)
+    assert len(pred) == 12 and np.isfinite(pred).all()
