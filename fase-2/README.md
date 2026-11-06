@@ -1,0 +1,286 @@
+# Predicción del precio de viviendas – Fase 2: scripts, versiones del modelo y Docker
+
+Proyecto Integrador v1 · 2026 II · Modelos y Simulación de Sistemas I · Universidad de Antioquia
+
+## Integrantes
+
+-Samuel Echeverri Ortiz (@Eche0813)
+
+-Miguel Angel Foronda (@Foronda713)
+
+-Sebastian Gómez Quintero (@SebasGomez4)
+
+## Problema y relación con la Fase 1
+
+Estimar el precio de venta (`SalePrice`, USD) de una vivienda a partir de sus características: es un problema de **regresión** sobre el *Ames Housing Dataset* (Kaggle `aecincode_houseprices`). La Fase 1 (`../fase-1/`, se conserva sin cambios) desarrolló el modelo en un notebook. Esta fase lo convierte en una aplicación reutilizable:
+
+- `train.py`: entrena y guarda una **versión** identificable del modelo (modelo + preprocesamiento + métricas + metadatos).
+- `predict.py`: carga una versión guardada y predice sobre datos nuevos, sin reentrenar ni reajustar nada.
+- `Dockerfile`: ejecuta ambos scripts en un contenedor, con datos y resultados en carpetas montadas.
+- `tests/`: 17 pruebas con pytest.
+
+Se conservan el problema, los datos y el enfoque de la Fase 1: Gradient Boosting (`HistGradientBoostingRegressor`) entrenado sobre `log(1 + precio)`, partición aleatoria 80/20 con semilla 42 y modelo base que predice la mediana.
+
+## Correcciones respecto a la Fase 1
+
+| Retroalimentación | Qué se hizo |
+|---|---|
+| Separar ausencia estructural de información desconocida | `AusenciaEstructural` (`src/preprocessing.py`): un vacío es `"None"` solo si la variable de referencia vale 0 (p. ej. `Bsmt Qual` vacío y `Total Bsmt SF == 0`); en otro caso es `"Desconocido"`. En `train.csv`: `Bsmt Qual` 41 "None" + 1 "Desconocido"; `Garage Finish` 98 + 1; `Bsmt Exposure` 41 + 3; `Mas Vnr Type` 1.037 + 18. El vacío extra es una fila donde la propia variable de referencia también falta. La regla usa solo valores de la misma fila, así que no aprende nada de los datos (no hay fuga). `Alley`, `Fence` y `Misc Feature` no tienen variable de referencia: su vacío se trata como "None" (limitación). |
+| Precisar el alcance de generalización | Se declara en `metadata.json` y aquí: estimación para viviendas del mismo mercado (Ames, 2006-2010) y **barrios conocidos**, con partición aleatoria. No se evaluó en barrios nuevos ni en períodos futuros. |
+| Disponibilidad de las variables de la transacción | Se conservan `Sale Type`, `Sale Condition`, `Mo Sold` y `Yr Sold`, pero solo son válidas si se conocen al predecir; para una tasación previa a la venta habría que retirarlas. Queda registrado en `limitaciones` de cada `metadata.json`. |
+| Moderar conclusiones | Que CV y prueba sean cercanos es consistente con un modelo estable, pero no demuestra por sí solo ausencia de sobreajuste o fuga. El RMSLE es un error en escala logarítmica, no un porcentaje medio de error. |
+| Fijar versiones del entorno | `requirements.txt` con versiones exactas; Python 3.12 en local y en Docker (`python:3.12-slim`). |
+| Pruebas de recarga, faltantes y categorías nuevas | `tests/test_aplicacion.py` (ver sección de pruebas). |
+| Revisión de los PR de cada funcionalidad | Cada rama `feature/*` se integró a `develop` mediante un Pull Request revisado por otro integrante. |
+
+**Efecto en el modelo.** Con la misma partición (80/20, semilla 42), el MAE en prueba pasó de 15.177 USD (notebook de la Fase 1) a 14.769 USD (`v1`). La diferencia reúne varios cambios del preprocesamiento (reglas de ausencia, categoría "Desconocido", indicadores en las variables ordinales) y no se atribuye a uno solo; mejorar la métrica no era objetivo de esta fase.
+
+## Estructura
+
+```
+repositorio/
+├── fase-1/                    # entrega anterior (sin cambios)
+└── fase-2/
+    ├── train.py               # entrena y guarda una versión
+    ├── predict.py             # predice con una versión guardada
+    ├── requirements.txt       # dependencias con versiones exactas (incluye pytest)
+    ├── Dockerfile
+    ├── .dockerignore
+    ├── pytest.ini
+    ├── src/                   # lógica reutilizable (config, data, preprocessing, modeling,
+    │                          #   training, registry, metadata, inference, errors)
+    ├── tests/test_aplicacion.py
+    ├── data/
+    │   ├── train.csv              # datos etiquetados
+    │   └── ejemplo_prediccion.csv # 5 filas sin SalePrice, con el esquema real
+    ├── models/
+    │   ├── v1/                # modelo.joblib, metrics.json, metadata.json
+    │   └── v2/
+    ├── evidencia/docker.md    # salida real de la ejecución en Docker
+    └── outputs/               # resultados generados (no se versiona)
+```
+
+
+## Entorno
+
+Se usó **Python 3.12** (el mismo de la imagen Docker). Desde la carpeta `fase-2`:
+
+Bash:
+
+```bash
+python3.12 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+PowerShell:
+
+```powershell
+py -3.12 -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+```
+
+Si PowerShell bloquea el script de activación: `Set-ExecutionPolicy -Scope Process Bypass`.
+
+## Datos
+
+- **Fuente:** competencia de Kaggle [`aecincode_houseprices`](https://www.kaggle.com/competitions/aecincode_houseprices), basada en el *Ames Housing Dataset* (De Cock, 2011).
+- **Archivos requeridos y ubicación:** `data/train.csv` (1.758 viviendas, 83 columnas: 79 predictoras, `SalePrice` y los identificadores `Order`, `PID`, `Id`) y `data/ejemplo_prediccion.csv`. Ambos ya están en el repositorio: no hace falta descargar nada ni usar credenciales de Kaggle.
+- **Ejemplo de predicción:** 5 filas de `test.csv` (sin `SalePrice`) con el esquema real.
+
+### Esquema del CSV de predicción
+
+Las **79 columnas predictoras** son obligatorias (el orden en el CSV no importa). `Order`, `PID` e `Id` son opcionales: si vienen, se copian a la salida para relacionar cada predicción con su fila. Una celda vacía es válida en cualquier columna; lo que no se admite es que falte la columna entera. Tipos: 36 numéricas y 43 categóricas (texto). `MS SubClass` es numérica pero codifica categorías. El esquema exacto queda en `models/<versión>/metadata.json` (`esquema_entrada`).
+
+<details>
+<summary>Lista de columnas</summary>
+
+**Numéricas (36):** MS SubClass, Lot Frontage, Lot Area, Overall Qual, Overall Cond, Year Built, Year Remod/Add, Mas Vnr Area, BsmtFin SF 1, BsmtFin SF 2, Bsmt Unf SF, Total Bsmt SF, 1st Flr SF, 2nd Flr SF, Low Qual Fin SF, Gr Liv Area, Bsmt Full Bath, Bsmt Half Bath, Full Bath, Half Bath, Bedroom AbvGr, Kitchen AbvGr, TotRms AbvGrd, Fireplaces, Garage Yr Blt, Garage Cars, Garage Area, Wood Deck SF, Open Porch SF, Enclosed Porch, 3Ssn Porch, Screen Porch, Pool Area, Misc Val, Mo Sold, Yr Sold.
+
+**Categóricas (43):** MS Zoning, Street, Alley, Lot Shape, Land Contour, Utilities, Lot Config, Land Slope, Neighborhood, Condition 1, Condition 2, Bldg Type, House Style, Roof Style, Roof Matl, Exterior 1st, Exterior 2nd, Mas Vnr Type, Exter Qual, Exter Cond, Foundation, Bsmt Qual, Bsmt Cond, Bsmt Exposure, BsmtFin Type 1, BsmtFin Type 2, Heating, Heating QC, Central Air, Electrical, Kitchen Qual, Functional, Fireplace Qu, Garage Type, Garage Finish, Garage Qual, Garage Cond, Paved Drive, Pool QC, Fence, Misc Feature, Sale Type, Sale Condition.
+
+</details>
+
+## Entrenamiento (`train.py`)
+
+Comando completo (en una sola línea, desde `fase-2`):
+
+```bash
+python train.py --data data/train.csv --target SalePrice --output-dir models --version v3 --seed 42
+```
+
+| Argumento | Valor por defecto | Descripción |
+|---|---|---|
+| `--data` | (obligatorio) | CSV con datos etiquetados |
+| `--target` | `SalePrice` | variable objetivo |
+| `--output-dir` | `models` | carpeta donde se guardan las versiones |
+| `--version` | (obligatorio) | identificador único de la versión (letras, números, `.`, `-`, `_`) |
+| `--seed` | `42` | semilla de la partición, la validación cruzada y el modelo |
+| `--test-size` | `0.2` | fracción de datos para prueba |
+| `--cv-folds` | `5` | folds de validación cruzada sobre entrenamiento (`0` la omite) |
+| `--max-iter` | `300` | iteraciones (árboles) de Gradient Boosting |
+| `--learning-rate` | `0.05` | tasa de aprendizaje |
+| `--id-columns` | `Order PID Id` | columnas identificadoras que se excluyen |
+
+Proceso: valida el identificador (falla antes de entrenar si ya existe) → lee y valida los datos → **separa train/test** → ajusta preprocesamiento y modelo solo con entrenamiento (en la validación cruzada se reajustan dentro de cada fold) → evalúa modelo y modelo base con la misma partición → guarda la versión.
+
+Las versiones entregadas se generaron así:
+
+```bash
+python train.py --data data/train.csv --target SalePrice --output-dir models --version v1 --seed 42
+python train.py --data data/train.csv --target SalePrice --output-dir models --version v2 --seed 42 --max-iter 500 --learning-rate 0.03
+```
+
+**Versionamiento.** Cada ejecución crea `models/<versión>/` con `modelo.joblib` (pipeline completo: preprocesamiento + modelo), `metrics.json` (modelo y modelo base) y `metadata.json` (identificador, fecha, algoritmo, parámetros, semilla, esquema de entrada, datos con su SHA-256, partición, métrica, versiones de Python y librerías, y el hash del commit). **Una versión existente nunca se sobrescribe**: un identificador repetido termina con error. Las carpetas `models/v3/` y `models/v-docker/` están en `.gitignore` porque son las que usan los comandos de ejemplo de este README; solo `v1` y `v2` se versionan en Git.
+
+## Predicción (`predict.py`)
+
+```bash
+python predict.py --model models/v1/modelo.joblib --input data/ejemplo_prediccion.csv --output outputs/predicciones.csv
+```
+
+`--model` acepta el archivo `modelo.joblib` o la carpeta de la versión (`models/v2`). Se elige la versión explícitamente en cada ejecución. La salida es un CSV con `fila` (posición en la entrada), los identificadores presentes (`Order`, `PID`, `Id`) y `prediccion` (USD). Genera una predicción por fila y conserva el orden.
+
+**Reglas documentadas:**
+
+- Faltan columnas obligatorias → error con la lista de columnas faltantes.
+- Columna numérica con texto no convertible → error que indica columna y fila del CSV.
+- Columnas adicionales → se ignoran, con un aviso por `stderr`.
+- Celdas vacías → válidas: las trata el preprocesamiento guardado con la versión.
+- Categorías no vistas en el entrenamiento → no fallan: se codifican con las reglas guardadas (one-hot en ceros; en las variables ordinales se tratan como desconocidas).
+- Ante cualquier error: mensaje comprensible, código de salida `1` y **no se crea el archivo de salida**.
+
+## Ayuda de los scripts
+
+```bash
+python train.py --help
+python predict.py --help
+```
+
+## Ubicación de los resultados
+
+| Qué | Dónde |
+|---|---|
+| Versiones del modelo | `models/<versión>/modelo.joblib` |
+| Métricas (modelo y modelo base) | `models/<versión>/metrics.json` |
+| Metadatos | `models/<versión>/metadata.json` |
+| Predicciones | `outputs/` (se crea al ejecutar; no se versiona) |
+
+
+
+## Ejecución con Docker
+
+Terminal usada para estos comandos: **<Bash / PowerShell / Git Bash>**. En otra terminal hay que adaptar la sintaxis de rutas y de continuación de línea (en Git Bash de Windows, anteponer `MSYS_NO_PATHCONV=1` a `docker run` si las rutas se alteran).
+
+La imagen (`python:3.12-slim`) instala las dependencias y copia solo `train.py`, `predict.py` y `src/`. **No entrena durante `docker build`**: el entrenamiento ocurre en `docker run`. Los datos entran por un montaje de solo lectura y los modelos y predicciones salen por montajes, así que **persisten fuera del contenedor** aunque este se elimine (`--rm`). `.dockerignore` excluye `.git`, entornos virtuales, cachés, credenciales, datos, modelos y salidas.
+
+Construir (desde `fase-2`):
+
+```bash
+docker build -t modelos-fase2:1.0 .
+```
+
+Entrenar en el contenedor (Bash):
+
+```bash
+mkdir -p models outputs
+docker run --rm -e GIT_COMMIT="$(git rev-parse HEAD)" -v "$PWD/data:/app/data:ro" -v "$PWD/models:/app/models" modelos-fase2:1.0 python train.py --data data/train.csv --target SalePrice --output-dir models --version v-docker --seed 42
+```
+
+Entrenar en el contenedor (PowerShell):
+
+```powershell
+mkdir models, outputs -Force
+$env:GIT_COMMIT = git rev-parse HEAD
+docker run --rm -e GIT_COMMIT -v "${PWD}/data:/app/data:ro" -v "${PWD}/models:/app/models" modelos-fase2:1.0 python train.py --data data/train.csv --target SalePrice --output-dir models --version v-docker --seed 42
+```
+
+Predecir en el contenedor (Bash):
+
+```bash
+docker run --rm -v "$PWD/data:/app/data:ro" -v "$PWD/models:/app/models:ro" -v "$PWD/outputs:/app/outputs" modelos-fase2:1.0 python predict.py --model models/v-docker/modelo.joblib --input data/ejemplo_prediccion.csv --output outputs/predicciones_docker.csv
+```
+
+Predecir en el contenedor (PowerShell):
+
+```powershell
+docker run --rm -v "${PWD}/data:/app/data:ro" -v "${PWD}/models:/app/models:ro" -v "${PWD}/outputs:/app/outputs" modelos-fase2:1.0 python predict.py --model models/v-docker/modelo.joblib --input data/ejemplo_prediccion.csv --output outputs/predicciones_docker.csv
+```
+
+Dentro de Docker no existe `.git`; por eso el hash del commit se pasa con `-e GIT_COMMIT` y queda en `metadata.json`.
+
+## Pruebas (pytest)
+
+```bash
+python -m pytest        # desde fase-2; añadir -v para ver cada prueba
+```
+
+Son 17 pruebas que usan una muestra de 300 filas de `data/train.csv` y directorios temporales: no descargan datos ni modifican `models/`. Tardan alrededor de 10 segundos.
+
+| Comportamiento | Qué comprueban |
+|---|---|
+| Entrenamiento y almacenamiento | se generan modelo cargable, métricas (modelo y modelo base) y metadatos completos; el modelo supera al base; la mediana de imputación aprendida es la del conjunto de entrenamiento (anti-fuga) |
+| Carga y predicción | el modelo guardado reproduce las predicciones del original; una predicción por fila, en orden y sin importar el orden de columnas; categorías nuevas y columnas extra no rompen |
+| Valores faltantes | "None" frente a "Desconocido" según la variable de referencia; entradas con nulos se procesan sin descartar filas |
+| Entrada inválida | columna ausente, tipo incompatible, modelo inexistente y objetivo inexistente dan error claro; por línea de comandos, código distinto de cero y sin archivo de salida |
+| Versionamiento | una segunda versión conserva la primera y ambas cargan; un identificador repetido no sobrescribe (función y línea de comandos); se rechazan identificadores peligrosos |
+
+## Evidencia de ejecución
+
+La salida real de la construcción de la imagen, el entrenamiento y la predicción en Docker, la persistencia fuera del contenedor, una entrada inválida y una versión repetida están en [`evidencia/docker.md`](evidencia/docker.md). Resumen del entrenamiento local de `v1`:
+
+```
+Versión:     v1
+Datos:       1406 train / 352 test
+Baseline:    MAE = 53,977  R2 = -0.047
+Modelo:      MAE = 14,769  R2 = 0.919  RMSLE = 0.136
+Reducción del MAE frente al baseline (test): 72.6%
+Archivos en: models/v1  (modelo.joblib, metrics.json, metadata.json)
+```
+
+Resultado de `python -m pytest`: `17 passed`.
+
+
+
+## Resultados
+
+Métrica principal: **MAE (USD)**, porque es interpretable y poco dominada por las pocas viviendas extremas. Se reportan también RMSE, R² y RMSLE. Partición común: 1.406 viviendas para entrenamiento y 352 para prueba (80/20, semilla 42). La validación cruzada (5 folds) se hace solo sobre entrenamiento.
+
+| | MAE prueba | RMSE prueba | R² prueba | RMSLE prueba | MAE CV (± desv.) | R² CV |
+|---|---|---|---|---|---|---|
+| Modelo base (mediana) | 53.977 | 80.588 | −0,047 | 0,419 | 54.444 ± 2.994 | −0,065 |
+| `v1` (300 iter., lr 0,05) | **14.769** | 22.461 | 0,919 | 0,136 | 15.558 ± 1.224 | 0,885 |
+| `v2` (500 iter., lr 0,03) | 14.938 | 22.723 | 0,917 | 0,138 | 15.675 ± 1.181 | 0,884 |
+
+- Ambas versiones reducen el MAE en prueba alrededor de **72 %** frente al modelo base (`v1`: 72,6 %; `v2`: 72,3 %).
+- `v2` no mejora a `v1` (la especificación no lo exige). La diferencia de MAE (≈170 USD) es pequeña frente a la variación entre folds (≈ ±1.200 USD) y no se hizo una prueba de hipótesis, por lo que no se afirma que una sea mejor.
+- Que el error de validación cruzada y el de prueba sean cercanos es consistente con un modelo estable, pero **no demuestra por sí solo** que no haya sobreajuste o fuga; las medidas contra la fuga son las descritas arriba (partición antes de ajustar, todo dentro de un `Pipeline`, ajuste solo con entrenamiento).
+- El RMSLE (≈ 0,14) es un error en escala logarítmica, **no** un porcentaje medio de error. El error relativo por terciles de precio se analiza en el notebook de la Fase 1 (`../fase-1/notebook.ipynb`).
+
+## Reproducibilidad
+
+- Una sola semilla (`--seed`, 42 por defecto) para la partición, la validación cruzada y el modelo. Con menos de 10.000 filas `HistGradientBoostingRegressor` no usa parada temprana, por lo que el entrenamiento es determinista: con los mismos datos, configuración y entorno se obtienen las mismas métricas. Entre sistemas pueden aparecer diferencias numéricas mínimas.
+- Dependencias con versiones exactas (`requirements.txt`) y Python 3.12. `metadata.json` guarda las versiones usadas y el hash del commit del código.
+- `modelo.joblib` contiene la clase `AusenciaEstructural` de `src/preprocessing.py` y se creó con scikit-learn 1.8.0: debe cargarse desde `fase-2` (o con `src/` importable) y con la misma versión de scikit-learn. `predict.py` avisa por `stderr` si las versiones difieren.
+
+## Limitaciones conocidas
+
+- Datos de una sola ciudad y época (Ames, 2006-2010); no se evaluó en barrios nuevos ni en períodos futuros.
+- Se incluyen variables de la transacción (`Sale Type`, `Sale Condition`, `Mo Sold`, `Yr Sold`): solo son válidas si se conocen al predecir.
+- `Alley`, `Fence` y `Misc Feature` no tienen variable de referencia para distinguir ausencia de dato perdido.
+- Sin ajuste fino de hiperparámetros y con valores atípicos sin tratar.
+- La API REST, el monitoreo y la publicación de la imagen corresponden a fases posteriores y no están implementados.
+
+## Git Flow y versión entregada
+
+Repositorio único con ramas `main` (entregas), `develop` (integración) y `feature/*`: `feature/estructura-docker`, `feature/predict-script`, `feature/train-script`, `feature/docker-tests` y `feature/readme-final`. Cada una se integró en `develop` mediante un Pull Request revisado por otro integrante, y la entrega se integró en `main`.
+
+**Versión evaluada de esta entrega:** etiqueta Git `entrega-2` (rama `main`). Este identificador es distinto de las versiones de modelo `v1` y `v2` de `models/`.
+
+## Fuentes consultadas
+
+- Competencias de Kaggle [`aecincode_houseprices`](https://www.kaggle.com/competitions/aecincode_houseprices) y [House Prices – Advanced Regression Techniques](https://www.kaggle.com/competitions/house-prices-advanced-regression-techniques/).
+- De Cock, D. (2011). *Ames, Iowa: Alternative to the Boston Housing Data as an End of Semester Regression Project*. Journal of Statistics Education.
+- Notebooks de clase NOTES 04.01 a 04.04 (exploración, limpieza y pruebas de hipótesis) y documentación de scikit-learn, pandas, pytest y Docker.
+- Asistente de IA (Claude) como apoyo para estructurar el código, las pruebas y la documentación. El equipo revisó, ejecutó y comprende el código entregado. No se copió código de otros repositorios.
