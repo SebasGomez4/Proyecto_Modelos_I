@@ -8,11 +8,22 @@ Ante un error previsible muestra un mensaje claro y termina con código 1 sin cr
 """
 import argparse
 import sys
+from pathlib import Path
+
+# Garantizar que la raíz del proyecto esté en el PATH para importar el paquete 'src',
+# tanto si el script se ejecuta desde src/ como si se copia a la raíz (p. ej. en Docker).
+_AQUI = Path(__file__).resolve().parent
+_RAIZ = _AQUI.parent if (_AQUI.parent / "src" / "__init__.py").is_file() else _AQUI
+sys.path.insert(0, str(_RAIZ))
 
 import sklearn
 
-from src import inference, registry
-from src.errors import ErrorAplicacion
+try:
+    from src import inference, registry
+    from src.errors import ErrorAplicacion, EntradaInvalida
+except ImportError as e:
+    print(f"Error de importación: {e}", file=sys.stderr)
+    sys.exit(1)
 
 
 def parse_args(argv=None):
@@ -27,11 +38,18 @@ def parse_args(argv=None):
 
 
 def main(argv=None):
-    args = parse_args(argv)
     try:
+        args = parse_args(argv)
+        model_path = Path(args.model)
+
+        if not model_path.exists():
+            print(f"Error: No existe el modelo en {model_path}", file=sys.stderr)
+            sys.exit(1)
+
         modelo, metadata = registry.cargar_version(args.model)
         if "esquema_entrada" not in metadata:
-            raise ErrorAplicacion("metadata.json no contiene 'esquema_entrada'; versión incompleta.")
+            print("Error: metadata.json no contiene 'esquema_entrada'; versión incompleta.", file=sys.stderr)
+            sys.exit(1)
 
         version_sklearn = metadata.get("entorno", {}).get("scikit-learn")
         if version_sklearn and version_sklearn != sklearn.__version__:
@@ -47,18 +65,23 @@ def main(argv=None):
                   file=sys.stderr)
         pred = inference.predecir(modelo, X)
         ruta = inference.escribir_salida(df, pred, ids, args.output)
-    except ErrorAplicacion as e:
-        print(f"Error: {e}", file=sys.stderr)
-        return 1
-    except Exception as e:  # cualquier otra falla: mensaje comprensible y código distinto de cero
-        print(f"Error inesperado ({type(e)._name_}): {e}", file=sys.stderr)
-        return 1
 
-    print(f"Versión usada:   {metadata.get('version', '?')}")
-    print(f"Filas predichas: {len(pred)}")
-    print(f"Salida:          {ruta}")
-    return 0
+        print(f"Versión usada:   {metadata.get('version', '?')}")
+        print(f"Filas predichas: {len(pred)}")
+        print(f"Salida:          {ruta}")
+        return 0
+
+    except (EntradaInvalida, ErrorAplicacion, FileNotFoundError) as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+    except SystemExit as e:
+        if e.code != 0:
+            sys.exit(e.code)
+        return 0
+    except Exception as e:
+        print(f"Error inesperado: {e}", file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()
