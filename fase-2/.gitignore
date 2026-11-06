@@ -1,0 +1,12 @@
+# Excluir modelos generados y binarios
+models/*
+!models/.gitkeep
+
+# Excluir archivos de salida de predicciones
+outputs/*
+!outputs/.gitkeep
+
+# Cachés de Python y pruebas
+__pycache__/
+*.pyc
+.pytest_cache/
