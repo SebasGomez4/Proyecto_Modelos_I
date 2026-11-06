@@ -240,3 +240,47 @@ Archivos en: models/v1  (modelo.joblib, metrics.json, metadata.json)
 ```
 
 Resultado de `python -m pytest`: `17 passed`.
+
+
+
+## Resultados
+
+Métrica principal: **MAE (USD)**, porque es interpretable y poco dominada por las pocas viviendas extremas. Se reportan también RMSE, R² y RMSLE. Partición común: 1.406 viviendas para entrenamiento y 352 para prueba (80/20, semilla 42). La validación cruzada (5 folds) se hace solo sobre entrenamiento.
+
+| | MAE prueba | RMSE prueba | R² prueba | RMSLE prueba | MAE CV (± desv.) | R² CV |
+|---|---|---|---|---|---|---|
+| Modelo base (mediana) | 53.977 | 80.588 | −0,047 | 0,419 | 54.444 ± 2.994 | −0,065 |
+| `v1` (300 iter., lr 0,05) | **14.769** | 22.461 | 0,919 | 0,136 | 15.558 ± 1.224 | 0,885 |
+| `v2` (500 iter., lr 0,03) | 14.938 | 22.723 | 0,917 | 0,138 | 15.675 ± 1.181 | 0,884 |
+
+- Ambas versiones reducen el MAE en prueba alrededor de **72 %** frente al modelo base (`v1`: 72,6 %; `v2`: 72,3 %).
+- `v2` no mejora a `v1` (la especificación no lo exige). La diferencia de MAE (≈170 USD) es pequeña frente a la variación entre folds (≈ ±1.200 USD) y no se hizo una prueba de hipótesis, por lo que no se afirma que una sea mejor.
+- Que el error de validación cruzada y el de prueba sean cercanos es consistente con un modelo estable, pero **no demuestra por sí solo** que no haya sobreajuste o fuga; las medidas contra la fuga son las descritas arriba (partición antes de ajustar, todo dentro de un `Pipeline`, ajuste solo con entrenamiento).
+- El RMSLE (≈ 0,14) es un error en escala logarítmica, **no** un porcentaje medio de error. El error relativo por terciles de precio se analiza en el notebook de la Fase 1 (`../fase-1/notebook.ipynb`).
+
+## Reproducibilidad
+
+- Una sola semilla (`--seed`, 42 por defecto) para la partición, la validación cruzada y el modelo. Con menos de 10.000 filas `HistGradientBoostingRegressor` no usa parada temprana, por lo que el entrenamiento es determinista: con los mismos datos, configuración y entorno se obtienen las mismas métricas. Entre sistemas pueden aparecer diferencias numéricas mínimas.
+- Dependencias con versiones exactas (`requirements.txt`) y Python 3.12. `metadata.json` guarda las versiones usadas y el hash del commit del código.
+- `modelo.joblib` contiene la clase `AusenciaEstructural` de `src/preprocessing.py` y se creó con scikit-learn 1.8.0: debe cargarse desde `fase-2` (o con `src/` importable) y con la misma versión de scikit-learn. `predict.py` avisa por `stderr` si las versiones difieren.
+
+## Limitaciones conocidas
+
+- Datos de una sola ciudad y época (Ames, 2006-2010); no se evaluó en barrios nuevos ni en períodos futuros.
+- Se incluyen variables de la transacción (`Sale Type`, `Sale Condition`, `Mo Sold`, `Yr Sold`): solo son válidas si se conocen al predecir.
+- `Alley`, `Fence` y `Misc Feature` no tienen variable de referencia para distinguir ausencia de dato perdido.
+- Sin ajuste fino de hiperparámetros y con valores atípicos sin tratar.
+- La API REST, el monitoreo y la publicación de la imagen corresponden a fases posteriores y no están implementados.
+
+## Git Flow y versión entregada
+
+Repositorio único con ramas `main` (entregas), `develop` (integración) y `feature/*`: `feature/estructura-docker`, `feature/predict-script`, `feature/train-script`, `feature/docker-tests` y `feature/readme-final`. Cada una se integró en `develop` mediante un Pull Request revisado por otro integrante, y la entrega se integró en `main`.
+
+**Versión evaluada de esta entrega:** etiqueta Git `entrega-2` (rama `main`). Este identificador es distinto de las versiones de modelo `v1` y `v2` de `models/`.
+
+## Fuentes consultadas
+
+- Competencias de Kaggle [`aecincode_houseprices`](https://www.kaggle.com/competitions/aecincode_houseprices) y [House Prices – Advanced Regression Techniques](https://www.kaggle.com/competitions/house-prices-advanced-regression-techniques/).
+- De Cock, D. (2011). *Ames, Iowa: Alternative to the Boston Housing Data as an End of Semester Regression Project*. Journal of Statistics Education.
+- Notebooks de clase NOTES 04.01 a 04.04 (exploración, limpieza y pruebas de hipótesis) y documentación de scikit-learn, pandas, pytest y Docker.
+- Asistente de IA (Claude) como apoyo para estructurar el código, las pruebas y la documentación. El equipo revisó, ejecutó y comprende el código entregado. No se copió código de otros repositorios.
