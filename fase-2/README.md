@@ -166,3 +166,77 @@ python predict.py --help
 | Métricas (modelo y modelo base) | `models/<versión>/metrics.json` |
 | Metadatos | `models/<versión>/metadata.json` |
 | Predicciones | `outputs/` (se crea al ejecutar; no se versiona) |
+
+
+
+## Ejecución con Docker
+
+Terminal usada para estos comandos: **<Bash / PowerShell / Git Bash>**. En otra terminal hay que adaptar la sintaxis de rutas y de continuación de línea (en Git Bash de Windows, anteponer `MSYS_NO_PATHCONV=1` a `docker run` si las rutas se alteran).
+
+La imagen (`python:3.12-slim`) instala las dependencias y copia solo `train.py`, `predict.py` y `src/`. **No entrena durante `docker build`**: el entrenamiento ocurre en `docker run`. Los datos entran por un montaje de solo lectura y los modelos y predicciones salen por montajes, así que **persisten fuera del contenedor** aunque este se elimine (`--rm`). `.dockerignore` excluye `.git`, entornos virtuales, cachés, credenciales, datos, modelos y salidas.
+
+Construir (desde `fase-2`):
+
+```bash
+docker build -t modelos-fase2:1.0 .
+```
+
+Entrenar en el contenedor (Bash):
+
+```bash
+mkdir -p models outputs
+docker run --rm -e GIT_COMMIT="$(git rev-parse HEAD)" -v "$PWD/data:/app/data:ro" -v "$PWD/models:/app/models" modelos-fase2:1.0 python train.py --data data/train.csv --target SalePrice --output-dir models --version v-docker --seed 42
+```
+
+Entrenar en el contenedor (PowerShell):
+
+```powershell
+mkdir models, outputs -Force
+$env:GIT_COMMIT = git rev-parse HEAD
+docker run --rm -e GIT_COMMIT -v "${PWD}/data:/app/data:ro" -v "${PWD}/models:/app/models" modelos-fase2:1.0 python train.py --data data/train.csv --target SalePrice --output-dir models --version v-docker --seed 42
+```
+
+Predecir en el contenedor (Bash):
+
+```bash
+docker run --rm -v "$PWD/data:/app/data:ro" -v "$PWD/models:/app/models:ro" -v "$PWD/outputs:/app/outputs" modelos-fase2:1.0 python predict.py --model models/v-docker/modelo.joblib --input data/ejemplo_prediccion.csv --output outputs/predicciones_docker.csv
+```
+
+Predecir en el contenedor (PowerShell):
+
+```powershell
+docker run --rm -v "${PWD}/data:/app/data:ro" -v "${PWD}/models:/app/models:ro" -v "${PWD}/outputs:/app/outputs" modelos-fase2:1.0 python predict.py --model models/v-docker/modelo.joblib --input data/ejemplo_prediccion.csv --output outputs/predicciones_docker.csv
+```
+
+Dentro de Docker no existe `.git`; por eso el hash del commit se pasa con `-e GIT_COMMIT` y queda en `metadata.json`.
+
+## Pruebas (pytest)
+
+```bash
+python -m pytest        # desde fase-2; añadir -v para ver cada prueba
+```
+
+Son 17 pruebas que usan una muestra de 300 filas de `data/train.csv` y directorios temporales: no descargan datos ni modifican `models/`. Tardan alrededor de 10 segundos.
+
+| Comportamiento | Qué comprueban |
+|---|---|
+| Entrenamiento y almacenamiento | se generan modelo cargable, métricas (modelo y modelo base) y metadatos completos; el modelo supera al base; la mediana de imputación aprendida es la del conjunto de entrenamiento (anti-fuga) |
+| Carga y predicción | el modelo guardado reproduce las predicciones del original; una predicción por fila, en orden y sin importar el orden de columnas; categorías nuevas y columnas extra no rompen |
+| Valores faltantes | "None" frente a "Desconocido" según la variable de referencia; entradas con nulos se procesan sin descartar filas |
+| Entrada inválida | columna ausente, tipo incompatible, modelo inexistente y objetivo inexistente dan error claro; por línea de comandos, código distinto de cero y sin archivo de salida |
+| Versionamiento | una segunda versión conserva la primera y ambas cargan; un identificador repetido no sobrescribe (función y línea de comandos); se rechazan identificadores peligrosos |
+
+## Evidencia de ejecución
+
+La salida real de la construcción de la imagen, el entrenamiento y la predicción en Docker, la persistencia fuera del contenedor, una entrada inválida y una versión repetida están en [`evidencia/docker.md`](evidencia/docker.md). Resumen del entrenamiento local de `v1`:
+
+```
+Versión:     v1
+Datos:       1406 train / 352 test
+Baseline:    MAE = 53,977  R2 = -0.047
+Modelo:      MAE = 14,769  R2 = 0.919  RMSLE = 0.136
+Reducción del MAE frente al baseline (test): 72.6%
+Archivos en: models/v1  (modelo.joblib, metrics.json, metadata.json)
+```
+
+Resultado de `python -m pytest`: `17 passed`.
