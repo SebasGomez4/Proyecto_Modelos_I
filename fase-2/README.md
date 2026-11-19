@@ -210,6 +210,16 @@ docker run --rm -v "${PWD}/data:/app/data:ro" -v "${PWD}/models:/app/models:ro" 
 
 Dentro de Docker no existe `.git`; por eso el hash del commit se pasa con `-e GIT_COMMIT` y queda en `metadata.json`.
 
+v1 y v2 se entrenaron con la misma configuración (semilla 42, 300 iteraciones, tasa de aprendizaje 0,05), por lo que su artefacto es el mismo (mismo SHA-256, ver la tabla de Resultados): v2 demuestra el versionamiento, no una mejora.
+
+python train.py --data data/train.csv --target SalePrice --output-dir models --version v1 --seed 42
+python train.py --data data/train.csv --target SalePrice --output-dir models --version v2 --seed 42
+
+
+Para entrenar con otros hiperparámetros y la misma partición (nueva versión):
+
+python train.py --data data/train.csv --target SalePrice --output-dir models --version v3 --seed 42 --max-iter 500 --learning-rate 0.03
+
 ## Pruebas (pytest)
 
 ```bash
@@ -245,18 +255,32 @@ Resultado de `python -m pytest`: `17 passed`.
 
 ## Resultados
 
-Métrica principal: **MAE (USD)**, porque es interpretable y poco dominada por las pocas viviendas extremas. Se reportan también RMSE, R² y RMSLE. Partición común: 1.406 viviendas para entrenamiento y 352 para prueba (80/20, semilla 42). La validación cruzada (5 folds) se hace solo sobre entrenamiento.
+Métrica principal: MAE (USD), porque es interpretable y poco dominada por las pocas viviendas extremas; se reportan también RMSE, R² y RMSLE. El modelo base predice siempre la mediana del precio de entrenamiento y se evalúa con la misma partición y las mismas métricas. La validación cruzada (5 folds) se hace solo sobre entrenamiento.
 
-| | MAE prueba | RMSE prueba | R² prueba | RMSLE prueba | MAE CV (± desv.) | R² CV |
-|---|---|---|---|---|---|---|
-| Modelo base (mediana) | 53.977 | 80.588 | −0,047 | 0,419 | 54.444 ± 2.994 | −0,065 |
-| `v1` (300 iter., lr 0,05) | **14.769** | 22.461 | 0,919 | 0,136 | 15.558 ± 1.224 | 0,885 |
-| `v2` (500 iter., lr 0,03) | 14.938 | 22.723 | 0,917 | 0,138 | 15.675 ± 1.181 | 0,884 |
+Las tablas siguientes se generan desde metrics.json y metadata.json de cada versión con python resumen_versiones.py --actualizar-readme README.md, y la prueba test_readme_coincide_con_los_artefactos_entregados falla si el README deja de coincidir con los artefactos.
 
-- Ambas versiones reducen el MAE en prueba alrededor de **72 %** frente al modelo base (`v1`: 72,6 %; `v2`: 72,3 %).
-- `v2` no mejora a `v1` (la especificación no lo exige). La diferencia de MAE (≈170 USD) es pequeña frente a la variación entre folds (≈ ±1.200 USD) y no se hizo una prueba de hipótesis, por lo que no se afirma que una sea mejor.
-- Que el error de validación cruzada y el de prueba sean cercanos es consistente con un modelo estable, pero **no demuestra por sí solo** que no haya sobreajuste o fuga; las medidas contra la fuga son las descritas arriba (partición antes de ajustar, todo dentro de un `Pipeline`, ajuste solo con entrenamiento).
-- El RMSLE (≈ 0,14) es un error en escala logarítmica, **no** un porcentaje medio de error. El error relativo por terciles de precio se analiza en el notebook de la Fase 1 (`../fase-1/notebook.ipynb`).
+<!-- RESUMEN-VERSIONES:INICIO versiones=v1,v2 -->
+**Trazabilidad de cada versión**
+
+| Versión | Creada (UTC) | Commit del código | Python | scikit-learn | Semilla | Iteraciones | Tasa de aprendizaje | SHA-256 del modelo |
+|---|---|---|---|---|---|---|---|---|
+| `v1` | 2026-11-04 22:38:45 | 9951527+cambios | 3.11.9 | 1.8.0 | 42 | 300 | 0,05 | `355630f55771` |
+| `v2` | 2026-11-04 22:40:06 | d025b6a+cambios | 3.11.9 | 1.8.0 | 42 | 300 | 0,05 | `355630f55771` |
+
+**Métricas de cada versión** (MAE y RMSE en USD)
+
+| Versión | Partición (semilla; train/test) | MAE prueba | RMSE prueba | R² prueba | RMSLE prueba | MAE validación cruzada (± desv.) | MAE modelo base (prueba) | Reducción del MAE vs base |
+|---|---|---|---|---|---|---|---|---|
+| `v1` | 42; 1406/352 | 14.769 | 22.461 | 0,919 | 0,136 | 15.558 ± 1.224 | 53.977 | 72,6 % |
+| `v2` | 42; 1406/352 | 14.769 | 22.461 | 0,919 | 0,136 | 15.558 ± 1.224 | 53.977 | 72,6 % |
+
+- **Artefactos idénticos:** `v1`, `v2` comparten el mismo SHA-256: mismos datos, semilla y parámetros, por lo que sus métricas son idénticas y no representan una mejora.
+- Todas las versiones usan los mismos datos y la misma partición (semilla 42, 1406/352): sus métricas son comparables.
+<!-- RESUMEN-VERSIONES:FIN -->
+
+Si dos versiones usan otra semilla u otros datos de prueba, la nota bajo la tabla lo indica y sus métricas no deben leerse como mejora o empeoramiento del modelo. Dos versiones con el mismo SHA-256 son el mismo artefacto.
+Que el error de validación cruzada y el de prueba sean cercanos es consistente con un modelo estable, pero no demuestra por sí solo que no haya sobreajuste o fuga; las medidas contra la fuga son las descritas arriba (partición antes de ajustar, todo dentro de un Pipeline, ajuste solo con entrenamiento).
+El RMSLE es un error en escala logarítmica, no un porcentaje medio de error. El error relativo por terciles de precio se analiza en el notebook de la Fase 1 (../fase-1/notebook.ipynb).
 
 ## Reproducibilidad
 

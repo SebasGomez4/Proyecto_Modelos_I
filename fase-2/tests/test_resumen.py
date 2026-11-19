@@ -106,3 +106,17 @@ def test_readme_sin_bloque_marcado_da_error_claro(tmp_path):
     readme.write_text("# sin marcadores\n", encoding="utf-8")
     with pytest.raises(ErrorAplicacion, match="RESUMEN-VERSIONES"):
         resumen.actualizar_readme(readme, tmp_path / "models")
+
+def test_readme_coincide_con_los_artefactos_entregados():
+    """Las cifras del README deben salir de metrics.json y metadata.json de cada versión."""
+    texto = (RAIZ / "README.md").read_text(encoding="utf-8")
+    versiones, bloque = resumen.bloque_en_readme(texto)
+    assert bloque is not None, "El README debe tener el bloque <!-- RESUMEN-VERSIONES:INICIO versiones=... -->"
+
+    esperado = resumen.generar_bloque(RAIZ / "models", versiones)
+    assert bloque == esperado, ("La tabla del README no coincide con los artefactos. "
+                                "Ejecute: python resumen_versiones.py --actualizar-readme README.md")
+
+    for r in resumen.cargar_versiones(RAIZ / "models", versiones):          # trazabilidad mínima por versión
+        assert r["meta"]["version"] == r["version"]
+        assert r["meta"]["commit"] and r["meta"]["entorno"]["python"] and r["meta"]["parametros"]
