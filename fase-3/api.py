@@ -15,15 +15,18 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from ajustes import Ajustes
+from entrada import EntradaInvalidaDetallada, JsonInvalido
 from servicio_modelo import ServicioModelo
-from src.errors import ErrorAplicacion, ModeloIlegible, ModeloNoEncontrado
+from src.errors import EntradaInvalida, ErrorAplicacion, ErrorDePrediccion, ModeloIlegible, ModeloNoEncontrado
 
 # error de la aplicación -> código HTTP (los siguientes PR agregan entrada, entrenamiento, etc.)
 ESTADO_POR_ERROR = [
     (ModeloNoEncontrado, 503),
     (ModeloIlegible, 503),
+    (JsonInvalido, 400),            # el cuerpo ni siquiera es JSON
+    (EntradaInvalida, 422),         # falta una variable o llega un tipo incompatible
+    (ErrorDePrediccion, 500),
 ]
-
 
 def codigo_http(error):
     for tipo, codigo in ESTADO_POR_ERROR:
@@ -46,6 +49,10 @@ def create_app(ajustes=None):
     async def errores_de_la_aplicacion(request: Request, error: ErrorAplicacion):
         codigo = codigo_http(error)
         cuerpo = {"detail": str(error)}
+        
+        if isinstance(error, EntradaInvalidaDetallada):
+            cuerpo["errores"] = error.errores                      # un elemento por campo con problema
+
         if codigo == 503:
             cuerpo.update(
                 version_configurada=servicio.version,
