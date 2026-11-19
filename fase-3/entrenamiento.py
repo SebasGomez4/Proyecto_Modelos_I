@@ -12,11 +12,13 @@ toma el valor de la configuración (ajustes.py: SEED, MAX_ITER, LEARNING_RATE, C
 
 Una versión nueva nunca sobrescribe una existente y no cambia la versión activa de /predict.
 """
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 
 import rutas  # noqa: F401
-from src.errors import EntradaInvalida
+from src import training
+from src.errors import EntradaInvalida, ErrorAplicacion
 
 
 def _entero(v):
@@ -74,3 +76,43 @@ def generar_identificador(models_dir, ahora=None):
         n += 1
         candidato = f"{base}-{n}"
     return candidato
+
+
+class EntrenamientoEnCurso(ErrorAplicacion):
+    """Ya hay un entrenamiento en ejecución (409): se entrena de a uno para no competir por los archivos."""
+
+
+class ServicioEntrenamiento:
+    def __init__(self, ajustes, servicio_modelo):
+        self.ajustes = ajustes
+        self.servicio_modelo = servicio_modelo
+        self._lock = threading.Lock()
+
+    def entrenar(self, cuerpo):
+        """Entrena y guarda una versión nueva. Devuelve el resumen que responde POST /train."""
+        parametros = leer_parametros(cuerpo, self.ajustes)
+        if not self._lock.acquire(blocking=False):
+            raise EntrenamientoEnCurso("Ya hay un entrenamiento en curso; espere a que termine y reintente.")
+        try:
+            models_dir = self.ajustes.models_dir
+            version = parametros["version"] or generar_identificador(models_dir)
+            r = training.entrenar(self.ajustes.data_path, self.ajustes.target, models_dir, version,
+                                  seed=parametros["seed"], cv_folds=parametros["cv_folds"],
+                                  max_iter=parametros["max_iter"], learning_rate=parametros["learning_rate"])
+        finally:
+            self._lock.release()
+
+        m = r["metricas"]
+        activa = self.servicio_modelo.version
+        return {
+            "version": version,
+            "estado": "guardada",
+            "ubicacion": f"{models_dir.name}/{version}",
+            "archivos": ["modelo.joblib", "metrics.json", "metadata.json"],
+            "parametros": {k: parametros[k] for k in ("seed", "max_iter", "learning_rate", "cv_folds")},
+            "metricas_prueba": {k: round(v, 4) for k, v in m["modelo"]["test"].items()},
+            "metricas_modelo_base_prueba": {k: round(v, 4) for k, v in m["baseline"]["test"].items()},
+            "version_activa": activa,
+            "nota": f"/predict sigue usando '{activa}'. Para usar '{version}' inicie la API con "
+                    f"MODEL_VERSION={version}.",
+        }
