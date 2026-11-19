@@ -6,22 +6,30 @@ Arranque local (desde fase-3):
 Rutas (se van completando por Pull Requests):
     GET /health   la API está en ejecución (siempre 200)
     GET /modelo   datos de la versión configurada (503 si no está disponible)
+    POST /predict predice con la versión configurada (400 JSON inválido, 422 entrada inválida, 503 sin modelo)
 
 La versión que usa la API se elige con la variable de entorno MODEL_VERSION (ver ajustes.py).
 """
 import rutas  # noqa: F401  (hace importable fase-2/src)
 
 from fastapi import FastAPI, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 
 from ajustes import Ajustes
+import entrada
+from entrada import EntradaInvalidaDetallada, JsonInvalido
 from servicio_modelo import ServicioModelo
-from src.errors import ErrorAplicacion, ModeloIlegible, ModeloNoEncontrado
+from src import inference
+from src.errors import EntradaInvalida, ErrorAplicacion, ErrorDePrediccion, ModeloIlegible, ModeloNoEncontrado
 
-# error de la aplicación -> código HTTP (los siguientes PR agregan entrada, entrenamiento, etc.)
+# error de la aplicación -> código HTTP (el orden importa: se usa el primero que coincida)
 ESTADO_POR_ERROR = [
     (ModeloNoEncontrado, 503),
     (ModeloIlegible, 503),
+    (JsonInvalido, 400),            # el cuerpo ni siquiera es JSON
+    (EntradaInvalida, 422),         # falta una variable o llega un tipo incompatible
+    (ErrorDePrediccion, 500),
 ]
 
 
@@ -30,6 +38,15 @@ def codigo_http(error):
         if isinstance(error, tipo):
             return codigo
     return 500
+
+
+def predecir_registro(servicio, registro):
+    """Mismo camino que predict.py (Fase 2): esquema guardado -> preprocesamiento guardado -> modelo."""
+    modelo, meta = servicio.obtener()                                  # 503 si la versión no está disponible
+    df = entrada.validar_registro(registro, meta["esquema_entrada"])   # 422 si falta o no coincide el tipo
+    X, _ = inference.preparar_entrada(df, meta["esquema_entrada"])     # orden y tipos del entrenamiento
+    pred = inference.predecir(modelo, X)
+    return {"prediccion": round(float(pred[0]), 2), "version": meta["version"]}
 
 
 def create_app(ajustes=None):
@@ -46,6 +63,8 @@ def create_app(ajustes=None):
     async def errores_de_la_aplicacion(request: Request, error: ErrorAplicacion):
         codigo = codigo_http(error)
         cuerpo = {"detail": str(error)}
+        if isinstance(error, EntradaInvalidaDetallada):
+            cuerpo["errores"] = error.errores                      # un elemento por campo con problema
         if codigo == 503:
             cuerpo.update(
                 version_configurada=servicio.version,
@@ -67,6 +86,14 @@ def create_app(ajustes=None):
                 "algoritmo": meta["algoritmo"], "variable_objetivo": meta["variable_objetivo"],
                 "n_variables_entrada": len(meta["esquema_entrada"]), "semilla": meta["semilla"],
                 "commit": meta["commit"]}
+
+    @app.post("/predict")
+    async def predict(request: Request):
+        try:
+            registro = await request.json()
+        except (ValueError, UnicodeDecodeError):
+            raise JsonInvalido("El cuerpo de la solicitud no es un JSON válido.") from None
+        return await run_in_threadpool(predecir_registro, servicio, registro)
 
     return app
 
