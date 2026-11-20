@@ -110,3 +110,54 @@ def test_predict_acepta_nulos_y_los_trata_con_la_regla_de_la_fase_2(entorno, reg
 def test_predict_acepta_una_categoria_no_vista_en_el_entrenamiento(entorno, registro):
     registro["Neighborhood"] = "BarrioInexistente"
     assert entorno["cliente"]().post("/predict", json=registro).status_code == 200
+
+
+
+
+# ----------------------------------------------------------------- 3. /predict rechaza entradas
+@pytest.mark.parametrize("campo", ["Lot Area", "Neighborhood", "Year Built"])
+def test_predict_rechaza_un_campo_obligatorio_ausente(entorno, registro, campo):
+    del registro[campo]
+    r = entorno["cliente"]().post("/predict", json=registro)
+    assert r.status_code == 422
+    cuerpo = r.json()
+    assert campo in cuerpo["detail"]                                    # el mensaje nombra la variable
+    assert cuerpo["errores"] == [{"campo": campo, "problema": "falta",
+                                  "mensaje": f"Falta el campo obligatorio '{campo}'."}]
+    assert "prediccion" not in cuerpo                                   # no se devuelve ningún resultado
+
+
+def test_predict_nombra_todos_los_campos_ausentes(entorno, registro):
+    for campo in ("Lot Area", "Neighborhood"):
+        del registro[campo]
+    detalle = entorno["cliente"]().post("/predict", json=registro).json()["detail"]
+    assert "Lot Area" in detalle and "Neighborhood" in detalle
+
+
+@pytest.mark.parametrize("campo, valor", [("Lot Area", "grande"), ("Neighborhood", 5), ("Year Built", True)])
+def test_predict_rechaza_un_tipo_incompatible(entorno, registro, campo, valor):
+    registro[campo] = valor
+    r = entorno["cliente"]().post("/predict", json=registro)
+    assert r.status_code == 422
+    assert campo in r.json()["detail"] and r.json()["errores"][0]["problema"] == "tipo"
+
+
+@pytest.mark.parametrize("cuerpo", ["esto no es json", ""])
+def test_predict_con_cuerpo_que_no_es_json_responde_400(entorno, cuerpo):
+    r = entorno["cliente"]().post("/predict", content=cuerpo, headers={"content-type": "application/json"})
+    assert r.status_code == 400 and "JSON" in r.json()["detail"]
+
+
+def test_predict_con_una_lista_en_vez_de_un_objeto_responde_422(entorno, registro):
+    r = entorno["cliente"]().post("/predict", json=[registro])
+    assert r.status_code == 422 and "objeto JSON" in r.json()["detail"]
+
+
+def test_modelo_no_disponible_responde_503_con_ayuda(entorno, registro):
+    cliente = entorno["cliente"](version="v9")                         # versión que no existe
+    r = cliente.post("/predict", json=registro)
+    assert r.status_code == 503
+    cuerpo = r.json()
+    assert "v9" in cuerpo["detail"] and cuerpo["versiones_disponibles"] == ["v1"]
+    assert "MODEL_VERSION" in cuerpo["ayuda"]                          # explica cómo elegir una versión disponible
+    assert cliente.get("/health").json()["modelo"] == {"version": "v9", "disponible": False}   # sigue "en ejecución"
