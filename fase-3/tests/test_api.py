@@ -69,3 +69,44 @@ def test_health_responde_200_y_estado(entorno):
     assert cuerpo["estado"] == "ok" and "en ejecución" in cuerpo["mensaje"]
     assert cuerpo["modelo"] == {"version": "v1", "disponible": True}
     assert cuerpo["versiones_disponibles"] == ["v1"]
+
+
+
+# --------------------------------------------------------------- 2. /predict con entrada válida
+def test_predict_con_entrada_valida_devuelve_prediccion_y_version(entorno, registro):
+    r = entorno["cliente"]().post("/predict", json=registro)
+    assert r.status_code == 200
+    cuerpo = r.json()
+    assert set(cuerpo) == {"prediccion", "version"}
+    assert cuerpo["version"] == "v1"
+    assert isinstance(cuerpo["prediccion"], float) and 20_000 < cuerpo["prediccion"] < 800_000
+
+
+def test_el_json_y_el_csv_de_la_fase_2_dan_la_misma_prediccion(entorno, registro):
+    """El registro JSON es la fila 0 del CSV de ejemplo: ambos caminos deben coincidir."""
+    modelo, meta = registry.cargar_version(entorno["models"] / "v1")
+    fila = inference.leer_csv_entrada(FASE2 / "data" / "ejemplo_prediccion.csv").head(1)
+    X, _ = inference.preparar_entrada(fila, meta["esquema_entrada"])
+    esperado = round(float(inference.predecir(modelo, X)[0]), 2)
+
+    assert entorno["cliente"]().post("/predict", json=registro).json()["prediccion"] == esperado
+
+
+def test_predict_no_necesita_la_variable_objetivo_y_ignora_claves_adicionales(entorno, registro):
+    cliente = entorno["cliente"]()
+    sin_extras = cliente.post("/predict", json=registro).json()["prediccion"]
+    assert "SalePrice" not in registro                                  # el registro ya viene sin precio
+    con_extras = {**registro, "Id": 983, "PID": 1, "SalePrice": 999_999_999, "columna_inventada": "x"}
+    assert cliente.post("/predict", json=con_extras).json()["prediccion"] == sin_extras
+
+
+@pytest.mark.parametrize("campo", ["Lot Frontage", "Lot Area", "Neighborhood", "Electrical", "Bsmt Qual"])
+def test_predict_acepta_nulos_y_los_trata_con_la_regla_de_la_fase_2(entorno, registro, campo):
+    registro[campo] = None                                              # null != campo ausente
+    r = entorno["cliente"]().post("/predict", json=registro)
+    assert r.status_code == 200 and r.json()["version"] == "v1"
+
+
+def test_predict_acepta_una_categoria_no_vista_en_el_entrenamiento(entorno, registro):
+    registro["Neighborhood"] = "BarrioInexistente"
+    assert entorno["cliente"]().post("/predict", json=registro).status_code == 200
