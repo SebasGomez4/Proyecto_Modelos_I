@@ -1,0 +1,40 @@
+{
+  "metrica_principal": "MAE (USD)",
+  "modelo": {
+    "algoritmo": "HistGradientBoostingRegressor sobre log1p(SalePrice)",
+    "test": {
+      "MAE": 14937.585252096325,
+      "RMSE": 22722.796871348288,
+      "R2": 0.9167385188814666,
+      "RMSLE": 0.13781373899485316
+    },
+    "cv_train": {
+      "folds": 5,
+      "MAE": 15674.815484255563,
+      "MAE_std": 1181.3259121661754,
+      "RMSE": 26168.17254285557,
+      "RMSE_std": 4399.84715694888,
+      "R2": 0.883956460805746,
+      "R2_std": 0.02943583597027011
+    }
+  },
+  "baseline": {
+    "algoritmo": "mediana de entrenamiento",
+    "test": {
+      "MAE": 53976.91761363636,
+      "RMSE": 80587.96992719072,
+      "R2": -0.04727561459665197,
+      "RMSLE": 0.41882541947314306
+    },
+    "cv_train": {
+      "folds": 5,
+      "MAE": 54443.74664698014,
+      "MAE_std": 2993.9718314223514,
+      "RMSE": 79700.35711984544,
+      "RMSE_std": 5973.052084470119,
+      "R2": -0.06543938259591342,
+      "R2_std": 0.03273973513956653
+    }
+  },
+  "reduccion_mae_vs_baseline_test": 0.7232597578279907
+}
