@@ -175,3 +175,49 @@ python cliente_prueba.py                                     # /health y /predic
 python cliente_prueba.py --sin-campo "Lot Area"              # además, el rechazo 422
 python cliente_prueba.py --entrenar --cv-folds 0             # además, /train (versión api-...)
 ```
+
+## Ejecución con Docker
+
+Terminal usada: **<terminal>**. La imagen (`python:3.12-slim`) instala las dependencias y copia `fase-2/src` y el código de la API; **no copia datos ni modelos y no entrena durante el build**. Se construye con la **raíz del repositorio como contexto** (por eso `-f fase-3/Dockerfile` y el punto final), para reutilizar `fase-2/src` sin duplicarlo.
+
+- **Puerto:** `8000` (`-p 8000:8000`); el servidor escucha en `0.0.0.0`.
+- **Acceso a los datos:** `fase-2/data` se monta como `/app/data` en solo lectura (`DATA_PATH` por defecto: `data/train.csv`).
+- **Montaje de modelos:** `fase-2/models` se monta como `/app/models` con escritura: las versiones que crea `/train` quedan en tu equipo aunque el contenedor se elimine.
+
+Desde la raíz del repositorio. Bash:
+
+```bash
+docker build -f fase-3/Dockerfile -t modelos-api:1.0 .
+docker run --rm -p 8000:8000 -e GIT_COMMIT="$(git rev-parse HEAD)" -v "$PWD/fase-2/data:/app/data:ro" -v "$PWD/fase-2/models:/app/models" modelos-api:1.0
+```
+
+PowerShell:
+
+```powershell
+docker build -f fase-3/Dockerfile -t modelos-api:1.0 .
+$env:GIT_COMMIT = git rev-parse HEAD
+docker run --rm -p 8000:8000 -e GIT_COMMIT -v "${PWD}/fase-2/data:/app/data:ro" -v "${PWD}/fase-2/models:/app/models" modelos-api:1.0
+```
+
+Para usar otra versión: añadir `-e MODEL_VERSION=v2`. Dentro de Docker no existe `.git`, por eso el hash del commit se pasa con `-e GIT_COMMIT`. La imagen incluye un `HEALTHCHECK` sobre `/health`. Con el contenedor en marcha: `curl http://localhost:8000/health` y `python cliente_prueba.py` (desde `fase-3`).
+
+## Pruebas
+
+```bash
+python -m pytest        # desde fase-3; añadir -v para ver cada prueba
+```
+
+Usan un modelo pequeño entrenado al inicio con una muestra de 300 filas de `../fase-2/data/train.csv` y carpetas temporales (no tocan `fase-2/models`). Las tres que exige la especificación son `test_health_responde_200_y_estado`, `test_predict_con_entrada_valida_devuelve_prediccion_y_version` y `test_predict_rechaza_un_campo_obligatorio_ausente`. Además hay pruebas de nulos, tipos incompatibles, categorías nuevas, JSON inválido, 503 con ayuda, y de `/train` (versión nueva sin tocar la anterior, identificador repetido, parámetros inválidos). `/train` también se comprobó manualmente: [`evidencia/train-manual.md`](evidencia/train-manual.md).
+
+## Evidencia de ejecución
+
+La salida real de la construcción de la imagen, el arranque, `/health`, el cliente, `/train` dentro del contenedor, la persistencia de los modelos y el error 503 está en [`evidencia/docker-api.md`](evidencia/docker-api.md).
+
+## Limitaciones conocidas
+
+- Un solo proceso: el bloqueo de "un entrenamiento a la vez" es por proceso y no se comparte entre varios workers.
+- `/train` es síncrono: con validación cruzada tarda decenas de segundos.
+- La versión activa se cambia reiniciando la API con `MODEL_VERSION`; no hay una ruta para cambiarla en caliente.
+- Sin autenticación ni límite de solicitudes: pensada para demostración local.
+- El modelo guardado exige la misma versión de scikit-learn con la que se entrenó (1.8.0).
+- El registro de solicitudes y el monitoreo corresponden a la Fase 4.
