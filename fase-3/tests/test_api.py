@@ -161,3 +161,64 @@ def test_modelo_no_disponible_responde_503_con_ayuda(entorno, registro):
     assert "v9" in cuerpo["detail"] and cuerpo["versiones_disponibles"] == ["v1"]
     assert "MODEL_VERSION" in cuerpo["ayuda"]                          # explica cómo elegir una versión disponible
     assert cliente.get("/health").json()["modelo"] == {"version": "v9", "disponible": False}   # sigue "en ejecución"
+
+
+
+# ---------------------------------------------------------------------------------- 4. /train
+def test_train_guarda_una_version_nueva_y_conserva_la_anterior(entorno, registro):
+    models = entorno["models"]
+    sha_v1 = sha256(models / "v1" / "modelo.joblib")
+    cliente = entorno["cliente"]()
+
+    r = cliente.post("/train", json={"version": "v-api", "max_iter": 25, "cv_folds": 0})
+    assert r.status_code == 201
+    cuerpo = r.json()
+    assert cuerpo["version"] == "v-api" and cuerpo["estado"] == "guardada"
+    assert cuerpo["parametros"]["max_iter"] == 25 and "MAE" in cuerpo["metricas_prueba"]
+
+    assert sorted(p.name for p in (models / "v-api").iterdir()) == ["metadata.json", "metrics.json", "modelo.joblib"]
+    meta = json.loads((models / "v-api" / "metadata.json").read_text(encoding="utf-8"))
+    assert meta["version"] == "v-api" and meta["parametros"]["max_iter"] == 25
+    assert sha256(models / "v1" / "modelo.joblib") == sha_v1            # la versión anterior no cambió
+    assert registry.listar_versiones(models) == ["v-api", "v1"]
+    assert "v-api" in cliente.get("/health").json()["versiones_disponibles"]
+
+    # /predict sigue con v1 hasta cambiar la configuración; con MODEL_VERSION=v-api usa la nueva
+    assert cliente.post("/predict", json=registro).json()["version"] == "v1"
+    nuevo = entorno["cliente"](version="v-api").post("/predict", json=registro)
+    assert nuevo.status_code == 200 and nuevo.json()["version"] == "v-api"
+
+
+def test_train_sin_cuerpo_genera_un_identificador_disponible(entorno):
+    cliente = entorno["cliente"]()
+    r1, r2 = cliente.post("/train"), cliente.post("/train")
+    assert r1.status_code == r2.status_code == 201
+    assert r1.json()["version"].startswith("api-") and r1.json()["version"] != r2.json()["version"]
+    assert registry.listar_versiones(entorno["models"]) == sorted(["v1", r1.json()["version"], r2.json()["version"]])
+
+
+def test_train_con_identificador_repetido_responde_409_y_no_sobrescribe(entorno):
+    cliente = entorno["cliente"]()
+    antes = {p.name: sha256(p) for p in (entorno["models"] / "v1").iterdir()}
+    r = cliente.post("/train", json={"version": "v1"})
+    assert r.status_code == 409 and "ya existe" in r.json()["detail"]
+    assert {p.name: sha256(p) for p in (entorno["models"] / "v1").iterdir()} == antes
+
+
+@pytest.mark.parametrize("cuerpo", [{"max_iter": "mucho"}, {"max_iter": 0}, {"learning_rate": -1},
+                                    {"cv_folds": 1}, {"parametro_desconocido": 1}, {"version": "../fuera"}])
+def test_train_con_parametros_invalidos_responde_422_y_no_crea_versiones(entorno, cuerpo):
+    r = entorno["cliente"]().post("/train", json=cuerpo)
+    assert r.status_code == 422 and r.json()["detail"]
+    assert registry.listar_versiones(entorno["models"]) == ["v1"]
+
+
+def test_train_con_json_invalido_responde_400(entorno):
+    r = entorno["cliente"]().post("/train", content="no es json", headers={"content-type": "application/json"})
+    assert r.status_code == 400
+
+
+def test_train_sin_datos_responde_500_con_mensaje_claro(entorno, tmp_path):
+    r = entorno["cliente"](DATA_PATH=str(tmp_path / "no_existe.csv")).post("/train")
+    assert r.status_code == 500 and "No existe el archivo de datos" in r.json()["detail"]
+    assert registry.listar_versiones(entorno["models"]) == ["v1"]
