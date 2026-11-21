@@ -10,6 +10,7 @@
 | CV_FOLDS        | 5                                 | folds de validación cruzada en /train (0 = sin) |
 | MAX_ITER        | 300                               | iteraciones de Gradient Boosting en /train     |
 | LEARNING_RATE   | 0.05                              | tasa de aprendizaje en /train                  |
+| LOG_PATH        | logs/predicciones.csv             | registro CSV de las llamadas a /predict (Fase 4) |
 """
 import os
 from dataclasses import dataclass
@@ -50,6 +51,7 @@ class Ajustes:
     cv_folds: int = 5
     max_iter: int = 300
     learning_rate: float = 0.05
+    log_path: Path = Path("logs/predicciones.csv")
 
     @classmethod
     def desde_entorno(cls, env=None):

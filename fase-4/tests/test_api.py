@@ -49,7 +49,8 @@ def entorno(base, tmp_path):
 
     def cliente(version="v1", **extra):
         ajustes = Ajustes.desde_entorno({"MODELS_DIR": str(models), "DATA_PATH": str(base["csv"]),
-                                         "MODEL_VERSION": version, "CV_FOLDS": "0", "MAX_ITER": "20", **extra})
+                                         "MODEL_VERSION": version, "CV_FOLDS": "0", "MAX_ITER": "20",
+                                         "LOG_PATH": str(tmp_path / "logs" / "predicciones.csv"), **extra})
         return TestClient(create_app(ajustes))
 
     return {"models": models, "cliente": cliente}

@@ -1,14 +1,15 @@
-"""API REST del modelo de precios de viviendas (Fase 3).
+"""API REST del modelo de precios de viviendas con registro de solicitudes (Fase 4).
 
-Arranque local (desde fase-3):
+Arranque local (desde fase-4):
     uvicorn api:app --host 0.0.0.0 --port 8000
 
-Rutas (se van completando por Pull Requests):
+Rutas:
     GET /health   la API está en ejecución (siempre 200)
     GET /modelo   datos de la versión configurada (503 si no está disponible)
     POST /predict predice con la versión configurada (400 JSON inválido, 422 entrada inválida, 503 sin modelo)
     POST /train   entrena y guarda una versión nueva (201; 409 si el identificador existe o hay otro entrenamiento)
 
+Cada llamada a /predict (también las rechazadas) agrega una fila a LOG_PATH (ver registro.py).
 La versión que usa la API se elige con la variable de entorno MODEL_VERSION (ver ajustes.py).
 """
 import json
@@ -23,6 +24,7 @@ from ajustes import Ajustes
 import entrada
 from entrada import EntradaInvalidaDetallada, JsonInvalido
 from entrenamiento import EntrenamientoEnCurso, ServicioEntrenamiento
+from registro import RegistroSolicitudes
 from servicio_modelo import ServicioModelo
 from src import inference
 from src.errors import (DatosInvalidos, EntradaInvalida, ErrorAplicacion, ErrorDePrediccion, ModeloIlegible,
@@ -49,13 +51,21 @@ def codigo_http(error):
     return 500
 
 
-def predecir_registro(servicio, registro):
-    """Mismo camino que predict.py (Fase 2): esquema guardado -> preprocesamiento guardado -> modelo."""
+def predecir_registro(servicio, registro, traza=None):
+    """Mismo camino que predict.py (Fase 2): esquema guardado -> preprocesamiento guardado -> modelo.
+
+    `traza` recoge lo que el registro de solicitudes necesita saber aunque la llamada falle después:
+    la versión que se usó y, si hubo éxito, la predicción.
+    """
+    traza = {} if traza is None else traza
     modelo, meta = servicio.obtener()                                  # 503 si la versión no está disponible
+    traza["version"] = meta["version"]                                 # ya se usó el esquema de esta versión
     df = entrada.validar_registro(registro, meta["esquema_entrada"])   # 422 si falta o no coincide el tipo
     X, _ = inference.preparar_entrada(df, meta["esquema_entrada"])     # orden y tipos del entrenamiento
     pred = inference.predecir(modelo, X)
-    return {"prediccion": round(float(pred[0]), 2), "version": meta["version"]}
+    resultado = {"prediccion": round(float(pred[0]), 2), "version": meta["version"]}
+    traza["prediccion"] = resultado["prediccion"]
+    return resultado
 
 
 def create_app(ajustes=None):
@@ -63,12 +73,29 @@ def create_app(ajustes=None):
     ajustes = ajustes or Ajustes.desde_entorno()
     servicio = ServicioModelo(ajustes)
     entrenador = ServicioEntrenamiento(ajustes, servicio)
+    registro_solicitudes = RegistroSolicitudes(ajustes.log_path)
 
-    app = FastAPI(title="API de precios de viviendas", version="3.0",
-                  description="Consulta el modelo guardado (Fase 2) y entrena nuevas versiones.")
+    app = FastAPI(title="API de precios de viviendas", version="4.0",
+                  description="Consulta el modelo guardado (Fase 2), entrena nuevas versiones y registra el uso.")
     app.state.ajustes = ajustes
     app.state.servicio = servicio
     app.state.entrenador = entrenador
+    app.state.registro = registro_solicitudes
+
+    @app.middleware("http")
+    async def registrar_solicitudes_predict(request: Request, call_next):
+        """Una fila por cada llamada a /predict, con el código HTTP que finalmente se devolvió."""
+        if request.url.path != "/predict":
+            return await call_next(request)
+        request.state.traza = {}                                       # la ruta la completa (versión, predicción)
+        codigo = 500                                                   # si algo escapa sin respuesta, es un 500
+        try:
+            respuesta = await call_next(request)
+            codigo = respuesta.status_code
+            return respuesta
+        finally:
+            traza = request.state.traza
+            registro_solicitudes.registrar(codigo, traza.get("version"), traza.get("prediccion"))
 
     @app.exception_handler(ErrorAplicacion)
     async def errores_de_la_aplicacion(request: Request, error: ErrorAplicacion):
@@ -104,7 +131,7 @@ def create_app(ajustes=None):
             registro = await request.json()
         except (ValueError, UnicodeDecodeError):
             raise JsonInvalido("El cuerpo de la solicitud no es un JSON válido.") from None
-        return await run_in_threadpool(predecir_registro, servicio, registro)
+        return await run_in_threadpool(predecir_registro, servicio, registro, request.state.traza)
 
     @app.post("/train", status_code=201)
     async def train(request: Request):
