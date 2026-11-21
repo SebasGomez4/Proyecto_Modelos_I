@@ -25,8 +25,8 @@ class JsonInvalido(ErrorAplicacion):
 class EntradaInvalidaDetallada(EntradaInvalida):
     """Registro que no cumple el esquema; errores detalla cada campo (422)."""
 
-    def _init_(self, mensaje, errores):
-        super()._init_(mensaje)
+    def __init__ (self, mensaje, errores):
+        super().__init__ (mensaje)
         self.errores = errores
 
 
@@ -43,7 +43,7 @@ def _describir(valor):
         return "una lista"
     if isinstance(valor, dict):
         return "un objeto"
-    return f"un valor de tipo {type(valor)._name_}"
+    return f"un valor de tipo {type(valor).__name__}"
 
 
 def validar_registro(registro, esquema):

@@ -38,7 +38,7 @@ def _numero(env, clave, defecto, tipo):
     try:
         return tipo(texto)
     except ValueError:
-        raise ErrorConfiguracion(f"{clave}={texto!r} no es un {tipo._name_} válido.") from None
+        raise ErrorConfiguracion(f"{clave}={texto!r} no es un {tipo.__name__} válido.") from None
 
 
 @dataclass(frozen=True)
@@ -58,6 +58,7 @@ class Ajustes:
         env = os.environ if env is None else env
         models_dir = Path(env.get("MODELS_DIR") or _por_defecto("models", "models"))
         data_path = Path(env.get("DATA_PATH") or _por_defecto("data/train.csv", "data/train.csv"))
+        log_path = Path(env.get("LOG_PATH") or "logs/predicciones.csv")
         return cls(
             models_dir=models_dir,
             version=registry.validar_version(env.get("MODEL_VERSION") or "v1"),
@@ -67,4 +68,5 @@ class Ajustes:
             cv_folds=_numero(env, "CV_FOLDS", 5, int),
             max_iter=_numero(env, "MAX_ITER", 300, int),
             learning_rate=_numero(env, "LEARNING_RATE", 0.05, float),
+            log_path=log_path,
         )
