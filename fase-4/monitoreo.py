@@ -84,3 +84,35 @@ def detalle(filas):
     """Solicitudes por código HTTP y por versión del modelo (vacío = no se usó ningún modelo)."""
     return (Counter(f["estado_http"] for f in filas),
             Counter(f["version"] or "(sin versión)" for f in filas))
+
+
+def parse_args(argv=None):
+    p = argparse.ArgumentParser(description="Muestra el total de solicitudes y el porcentaje de fallos "
+                                            "del registro de /predict.")
+    p.add_argument("--registro", default=RUTA_POR_DEFECTO, help="CSV del registro (por defecto logs/predicciones.csv)")
+    p.add_argument("--detalle", action="store_true", help="agrega el conteo por código HTTP y por versión")
+    return p.parse_args(argv)
+
+
+def main(argv=None):
+    args = parse_args(argv)
+    try:
+        filas = leer_registro(args.registro)
+    except ErrorRegistro as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
+    m = calcular_metricas(filas)
+    print(f"Registro: {args.registro}")
+    print(f"Total de solicitudes: {m['total']}")
+    print(f"Solicitudes fallidas (HTTP 4xx o 5xx): {m['fallidas']}")
+    print(f"Porcentaje de fallos: {formatear_porcentaje(m['porcentaje_fallos'])}")
+    if args.detalle and filas:
+        por_codigo, por_version = detalle(filas)
+        print("\nPor código HTTP:  " + ", ".join(f"{c}: {n}" for c, n in sorted(por_codigo.items())))
+        print("Por versión:      " + ", ".join(f"{v}: {n}" for v, n in sorted(por_version.items())))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
