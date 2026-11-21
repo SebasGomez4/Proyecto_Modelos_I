@@ -1,0 +1,24 @@
+# Contexto = raíz del repositorio. Se excluye todo lo que la imagen no necesita.
+.git
+.github
+**/.venv
+**/venv
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+**/.ipynb_checkpoints
+**/.env
+**/*.pem
+**/*.key
+fase-1
+fase-2/data
+fase-2/models
+fase-2/outputs
+fase-2/tests
+fase-2/evidencia
+fase-3
+fase-4/tests
+fase-4/outputs
+fase-4/ejemplos
+fase-4/evidencia
+fase-4/logs
