@@ -103,3 +103,47 @@ Con la API corriendo en Docker con la versión `v1` y **sobre un registro vacío
 <!-- REPORTE-MONITOREO:FIN -->
 
 **Interpretación.** La API procesó dos registros con `v1` y rechazó el tercero (HTTP 422) porque faltaba `Lot Area`. La tasa de fallos fue 1/3 (33,3 %). El rechazo era el resultado esperado de la prueba de validación. La salida del ensayo está en [`evidencia/ensayo-docker.md`](evidencia/ensayo-docker.md).
+
+## Versiones del modelo
+
+**Versión activa de la API:** `v1` (se selecciona con `MODEL_VERSION`; es también el valor por defecto).
+**Versión candidata:** `<api-20261119T225453Z>`, creada con `POST /train` en la Fase 3 (500 iteraciones, tasa de aprendizaje 0,03, misma partición). Ambas están en `../fase-2/models/`, con su `modelo.joblib`, `metrics.json` y `metadata.json`. La tabla se genera desde esos archivos:
+
+<!-- RESUMEN-VERSIONES:INICIO versiones=v1,api-20261119T225453Z -->
+**Trazabilidad de cada versión**
+
+| Versión | Creada (UTC) | Commit del código | Python | scikit-learn | Semilla | Iteraciones | Tasa de aprendizaje | SHA-256 del modelo |
+|---|---|---|---|---|---|---|---|---|
+| `v1` | 2026-11-04 22:38:45 | 9951527+cambios | 3.11.9 | 1.8.0 | 42 | 300 | 0,05 | `355630f55771` |
+| `api-20261119T225453Z` | 2026-11-19 22:55:55 | c5a5681 | 3.12.10 | 1.8.0 | 42 | 500 | 0,03 | `a74d8188870a` |
+
+**Métricas de cada versión** (MAE y RMSE en USD)
+
+| Versión | Partición (semilla; train/test) | MAE prueba | RMSE prueba | R² prueba | RMSLE prueba | MAE validación cruzada (± desv.) | MAE modelo base (prueba) | Reducción del MAE vs base |
+|---|---|---|---|---|---|---|---|---|
+| `v1` | 42; 1406/352 | 14.769 | 22.461 | 0,919 | 0,136 | 15.558 ± 1.224 | 53.977 | 72,6 % |
+| `api-20261119T225453Z` | 42; 1406/352 | 14.938 | 22.723 | 0,917 | 0,138 | 15.675 ± 1.181 | 53.977 | 72,3 % |
+
+- Todas las versiones usan los mismos datos y la misma partición (semilla 42, 1406/352): sus métricas son comparables.
+<!-- RESUMEN-VERSIONES:FIN -->
+
+**Volver a la anterior o usar la otra** es cambiar la configuración existente y reiniciar la API. Para usar la candidata, `MODEL_VERSION=<api-20261119T225453Z>`; para volver a `v1`, `MODEL_VERSION=v1` (o quitar la variable). Con Docker, `-e MODEL_VERSION=v1`. `GET /health` lista las versiones disponibles.
+
+## Política de reentrenamiento
+
+Se revisa el modelo cuando se reúnan **100 viviendas nuevas con su precio de venta real**: los registros que llegan a `/predict` no traen el resultado, y solo con el precio real se puede medir qué tan bien predice. Ese día, la persona de turno del equipo ejecuta `POST /train` con los datos acumulados (agregando las filas nuevas al archivo de `DATA_PATH`) para crear una candidata, y se comparan candidata y versión activa con el **mismo MAE sobre las mismas viviendas reservadas** (misma partición y semilla: si cambian la semilla o el conjunto de prueba, la comparación no es válida). La candidata se activa (cambiando `MODEL_VERSION` y reiniciando la API) **solo si su MAE es menor**; si no, se conserva la activa. Un porcentaje de fallos alto en el registro se corrige en quien envía los datos, no reentrenando.
+
+## Pruebas
+
+```bash
+python -m pytest        # desde fase-4; añadir -v para ver cada prueba
+```
+
+Son <N> pruebas: las de la API heredadas de la fase 3, las del registro (una fila por intento, rechazos con su código, historial conservado, escrituras simultáneas), las del script de monitoreo y las que **atan este README a los artefactos**: el reporte debe coincidir con `muestra_registro.csv`, la tabla de versiones con los `metrics.json` y `metadata.json`, y la versión activa declarada debe ser la que predijo en el ensayo.
+
+## Limitaciones conocidas
+
+- El registro mide el funcionamiento del servicio, no la calidad de las predicciones.
+- El archivo crece sin rotación y la escritura está protegida por un bloqueo por proceso: con varios procesos escribiendo el mismo archivo habría que usar otra solución.
+- Las horas están en UTC.
+- El reporte respalda un solo ensayo de tres solicitudes; no es una medición de uso real.
