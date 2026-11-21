@@ -58,3 +58,29 @@ def leer_registro(ruta):
     except (OSError, UnicodeDecodeError, csv.Error) as e:
         raise ErrorRegistro(f"No se pudo leer {ruta}: {e}") from e
     return filas
+
+
+def es_fallida(codigo):
+    """Fallida = respuesta HTTP 4xx o 5xx."""
+    return 400 <= codigo <= 599
+
+
+def calcular_metricas(filas):
+    """Total de solicitudes, cuántas fallaron y el porcentaje (None si no hay solicitudes)."""
+    total = len(filas)
+    fallidas = sum(es_fallida(f["estado_http"]) for f in filas)
+    return {"total": total, "fallidas": fallidas,
+            "porcentaje_fallos": None if total == 0 else fallidas / total * 100}
+
+
+def formatear_porcentaje(porcentaje):
+    """33,3 % (una cifra decimal y coma) o «sin solicitudes» si el registro está vacío."""
+    if porcentaje is None:
+        return "sin solicitudes"
+    return f"{porcentaje:.1f}".replace(".", ",") + " %"
+
+
+def detalle(filas):
+    """Solicitudes por código HTTP y por versión del modelo (vacío = no se usó ningún modelo)."""
+    return (Counter(f["estado_http"] for f in filas),
+            Counter(f["version"] or "(sin versión)" for f in filas))
