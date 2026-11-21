@@ -14,6 +14,7 @@ predictiva requeriría conocer los precios reales de las viviendas.
 """
 import argparse
 import csv
+import re
 import sys
 from collections import Counter
 from pathlib import Path
@@ -21,6 +22,9 @@ from pathlib import Path
 from registro import CAMPOS
 
 RUTA_POR_DEFECTO = "logs/predicciones.csv"
+INICIO_REPORTE = "<!-- REPORTE-MONITOREO:INICIO -->"
+FIN_REPORTE = "<!-- REPORTE-MONITOREO:FIN -->"
+PATRON_REPORTE = re.compile(re.escape(INICIO_REPORTE) + ".*?" + re.escape(FIN_REPORTE), re.S)
 
 
 class ErrorRegistro(Exception):
@@ -86,11 +90,39 @@ def detalle(filas):
             Counter(f["version"] or "(sin versión)" for f in filas))
 
 
+def generar_reporte(filas):
+    """Bloque Markdown del reporte (tabla de solicitudes e indicadores), generado SOLO desde el registro."""
+    m = calcular_metricas(filas)
+    lineas = [INICIO_REPORTE, "",
+              "| # | Fecha y hora (UTC) | Código HTTP | Versión | Predicción (USD) |", "|---|---|---|---|---|"]
+    for i, f in enumerate(filas, start=1):
+        lineas.append(f"| {i} | {f['fecha_hora']} | {f['estado_http']} | {f['version'] or '—'} "
+                      f"| {f['prediccion'] or '—'} |")
+    lineas += ["", f"- **Total de solicitudes:** {m['total']}",
+               f"- **Solicitudes fallidas (HTTP 4xx o 5xx):** {m['fallidas']}",
+               f"- **Porcentaje de fallos:** {formatear_porcentaje(m['porcentaje_fallos'])}", "", FIN_REPORTE]
+    return "\n".join(lineas)
+
+
+def actualizar_readme(ruta_readme, filas):
+    """Reescribe solo el bloque marcado del README con las cifras reales del registro."""
+    ruta = Path(ruta_readme)
+    texto = ruta.read_text(encoding="utf-8")
+    if not PATRON_REPORTE.search(texto):
+        raise ErrorRegistro(f"{ruta} no tiene el bloque {INICIO_REPORTE} ... {FIN_REPORTE}.")
+    nuevo = generar_reporte(filas)
+    ruta.write_text(PATRON_REPORTE.sub(lambda _: nuevo, texto), encoding="utf-8")
+    return nuevo
+
+
 def parse_args(argv=None):
     p = argparse.ArgumentParser(description="Muestra el total de solicitudes y el porcentaje de fallos "
                                             "del registro de /predict.")
     p.add_argument("--registro", default=RUTA_POR_DEFECTO, help="CSV del registro (por defecto logs/predicciones.csv)")
     p.add_argument("--detalle", action="store_true", help="agrega el conteo por código HTTP y por versión")
+    p.add_argument("--markdown", action="store_true", help="imprime el bloque Markdown del reporte para el README")
+    p.add_argument("--actualizar-readme", metavar="README",
+                   help="reescribe en ese README el bloque marcado con REPORTE-MONITOREO")
     return p.parse_args(argv)
 
 
@@ -101,6 +133,18 @@ def main(argv=None):
     except ErrorRegistro as e:
         print(f"Error: {e}", file=sys.stderr)
         return 1
+
+    if args.markdown or args.actualizar_readme:
+        try:
+            if args.actualizar_readme:
+                actualizar_readme(args.actualizar_readme, filas)
+                print(f"README actualizado: {args.actualizar_readme}", file=sys.stderr)
+            else:
+                print(generar_reporte(filas))
+        except ErrorRegistro as e:
+            print(f"Error: {e}", file=sys.stderr)
+            return 1
+        return 0
 
     m = calcular_metricas(filas)
     print(f"Registro: {args.registro}")

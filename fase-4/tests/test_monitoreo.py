@@ -136,3 +136,37 @@ def test_el_script_lee_lo_que_escribe_el_modulo_del_registro(tmp_path):
     reg.registrar(503)
     m = monitoreo.calcular_metricas(monitoreo.leer_registro(tmp_path / "log.csv"))
     assert (m["total"], m["fallidas"], m["porcentaje_fallos"]) == (2, 1, 50.0)
+
+
+# ------------------------------------------------ reporte Markdown generado desde el registro
+def test_el_reporte_markdown_se_genera_solo_desde_el_registro(tmp_path, capsys):
+    log = escribir(tmp_path / "log.csv", "2026-11-06T10:00:00,200,v1,18.7", "2026-11-06T10:01:00,200,v1,19.2",
+                   "2026-11-06T10:02:00,422,,")
+    codigo, salida, _ = ejecutar(capsys, "--registro", log, "--markdown")
+    assert codigo == 0
+    assert salida.startswith(monitoreo.INICIO_REPORTE) and salida.strip().endswith(monitoreo.FIN_REPORTE)
+    assert "| 1 | 2026-11-06T10:00:00 | 200 | v1 | 18.7 |" in salida
+    assert "| 3 | 2026-11-06T10:02:00 | 422 | — | — |" in salida           # sin versión ni predicción: guion
+    assert "**Total de solicitudes:** 3" in salida and "**Porcentaje de fallos:** 33,3 %" in salida
+
+
+def test_actualizar_readme_reemplaza_solo_el_bloque_y_es_idempotente(tmp_path, capsys):
+    log = escribir(tmp_path / "log.csv", "2026-11-06T10:00:00,200,v1,18.7", "2026-11-06T10:02:00,422,,")
+    readme = tmp_path / "README.md"
+    readme.write_text(f"# Título\n\nantes\n\n{monitoreo.INICIO_REPORTE}\nCIFRAS VIEJAS INCORRECTAS\n"
+                      f"{monitoreo.FIN_REPORTE}\n\ndespués\n", encoding="utf-8")
+
+    assert ejecutar(capsys, "--registro", log, "--actualizar-readme", readme)[0] == 0
+    texto = readme.read_text(encoding="utf-8")
+    assert texto.startswith("# Título\n\nantes\n\n") and texto.endswith("\n\ndespués\n")
+    assert "CIFRAS VIEJAS" not in texto and "**Porcentaje de fallos:** 50,0 %" in texto
+    ejecutar(capsys, "--registro", log, "--actualizar-readme", readme)
+    assert readme.read_text(encoding="utf-8") == texto                       # repetir no cambia nada
+
+
+def test_actualizar_readme_sin_marcadores_da_error_claro(tmp_path, capsys):
+    log = escribir(tmp_path / "log.csv", "2026-11-06T10:00:00,200,v1,18.7")
+    readme = tmp_path / "README.md"
+    readme.write_text("# sin marcadores\n", encoding="utf-8")
+    codigo, _, error = ejecutar(capsys, "--registro", log, "--actualizar-readme", readme)
+    assert codigo == 1 and "REPORTE-MONITOREO" in error
